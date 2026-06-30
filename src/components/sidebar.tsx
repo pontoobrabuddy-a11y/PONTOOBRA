@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Users, HardHat, CheckSquare, BarChart3, Settings } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { Users, HardHat, CheckSquare, BarChart3, Settings, LogOut } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -14,6 +15,15 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  if (pathname === '/login') return null;
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.href = '/login';
+  };
 
   return (
     <>
@@ -48,6 +58,15 @@ export function Sidebar() {
               })}
             </nav>
           </div>
+          <div className="mt-auto p-4 border-t border-sidebar-border">
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all hover:bg-destructive/10 text-destructive hover:text-destructive"
+            >
+              <LogOut className="h-4 w-4" />
+              Sair do Sistema
+            </button>
+          </div>
         </div>
       </div>
 
@@ -74,6 +93,13 @@ export function Sidebar() {
             </Link>
           );
         })}
+        <button
+          onClick={handleLogout}
+          className="flex flex-col items-center justify-center w-full pt-3 pb-2 transition-colors text-destructive hover:text-destructive/80"
+        >
+          <LogOut className="h-5 w-5 mb-1 stroke-[2px]" />
+          <span className="text-[10px] font-medium">Sair</span>
+        </button>
       </div>
     </>
   );

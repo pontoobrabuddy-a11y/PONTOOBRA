@@ -33,7 +33,7 @@ export default function RootLayout({
         <InitStore />
         <div className="flex min-h-screen w-full">
           <Sidebar />
-          <div className="flex flex-col flex-1 pb-16 md:pb-0">
+          <div className="flex flex-col flex-1 pb-16 md:pb-0 min-w-0">
             <main className="flex-1 overflow-y-auto p-3 md:p-6 lg:p-8">
               {children}
             </main>

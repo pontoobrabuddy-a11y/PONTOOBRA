@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { supabase } from '@/lib/supabase';
 
 export type EmployeeStatus = 'ativo' | 'inativo';
 
@@ -23,38 +23,114 @@ export interface AttendanceRecord {
 
 interface AppState {
   employees: Employee[];
-  attendance: Record<string, Record<string, AttendanceRecord | Status>>; // date -> employeeId -> record
-  addEmployee: (emp: Omit<Employee, 'id'>) => void;
-  updateEmployee: (id: string, data: Partial<Employee>) => void;
-  deleteEmployee: (id: string) => void;
-  saveAttendance: (date: string, data: Record<string, AttendanceRecord>) => void;
+  attendance: Record<string, Record<string, AttendanceRecord | Status>>;
+  draftAttendance: Record<string, Record<string, AttendanceRecord>>;
+  isLoading: boolean;
+  fetchData: () => Promise<void>;
+  addEmployee: (emp: Omit<Employee, 'id'>) => Promise<void>;
+  updateEmployee: (id: string, data: Partial<Employee>) => Promise<void>;
+  deleteEmployee: (id: string) => Promise<void>;
+  saveAttendance: (date: string, data: Record<string, AttendanceRecord>) => Promise<void>;
+  setDraftAttendance: (date: string, data: Record<string, AttendanceRecord>) => void;
 }
 
-export const useStore = create<AppState>()(
-  persist(
-    (set) => ({
-      employees: [
-        { id: "1", name: "LUAN HENRIQUE LIMA DE VASCONCELOS", cpf: "111.111.111-11", phone: "(11) 99999-9999", role: "Pedreiro", admission_date: "2026-01-10", status: "ativo", team: "Alvenaria" },
-        { id: "2", name: "VICTOR WAGNER ROCHA DO NASCIMENTO", cpf: "222.222.222-22", phone: "(11) 88888-8888", role: "Ajudante", admission_date: "2026-02-15", status: "ativo", team: "Alvenaria" },
-        { id: "3", name: "FELIPE MOURA DA COSTA", cpf: "333.333.333-33", phone: "", role: "Eletricista", admission_date: "2026-03-01", status: "ativo", team: "Elétrica" },
-        { id: "4", name: "FCO WENDERSON MARTINS DO SANTOS", cpf: "444.444.444-44", phone: "", role: "Encanador", admission_date: "2026-01-20", status: "ativo", team: "Hidráulica" },
-      ],
-      attendance: {},
-      addEmployee: (emp) => set((state) => ({ 
-        employees: [...state.employees, { ...emp, id: Date.now().toString() }] 
-      })),
-      updateEmployee: (id, data) => set((state) => ({
-        employees: state.employees.map(emp => emp.id === id ? { ...emp, ...data } : emp)
-      })),
-      deleteEmployee: (id) => set((state) => ({
-        employees: state.employees.filter(emp => emp.id !== id)
-      })),
-      saveAttendance: (date, data) => set((state) => ({
-        attendance: { ...state.attendance, [date]: { ...state.attendance[date], ...data } }
-      })),
-    }),
-    {
-      name: 'ponto-obra-storage',
+export const useStore = create<AppState>()((set, get) => ({
+  employees: [],
+  attendance: {},
+  draftAttendance: {},
+  isLoading: true,
+
+  fetchData: async () => {
+    set({ isLoading: true });
+    
+    // Fetch employees
+    const { data: empData, error: empError } = await supabase.from('employees').select('*');
+    if (empError) console.error("Error fetching employees:", empError);
+    
+    // Fetch attendance
+    const { data: attData, error: attError } = await supabase.from('attendance').select('*');
+    if (attError) console.error("Error fetching attendance:", attError);
+
+    // Transform attendance data
+    const attendanceRecord: Record<string, Record<string, AttendanceRecord>> = {};
+    if (attData) {
+      attData.forEach(item => {
+        if (!attendanceRecord[item.date]) {
+          attendanceRecord[item.date] = {};
+        }
+        attendanceRecord[item.date][item.employee_id] = {
+          status: item.status as Status,
+          observation: item.observation || undefined
+        };
+      });
     }
-  )
-);
+
+    set({ 
+      employees: empData || [], 
+      attendance: attendanceRecord,
+      isLoading: false 
+    });
+  },
+
+  addEmployee: async (emp) => {
+    const { data, error } = await supabase.from('employees').insert([emp]).select().single();
+    if (error) {
+      console.error("Error adding employee:", error);
+      return;
+    }
+    if (data) {
+      set((state) => ({ employees: [...state.employees, data] }));
+    }
+  },
+
+  updateEmployee: async (id, data) => {
+    const { error } = await supabase.from('employees').update(data).eq('id', id);
+    if (error) {
+      console.error("Error updating employee:", error);
+      return;
+    }
+    set((state) => ({
+      employees: state.employees.map(e => e.id === id ? { ...e, ...data } : e)
+    }));
+  },
+
+  deleteEmployee: async (id) => {
+    const { error } = await supabase.from('employees').delete().eq('id', id);
+    if (error) {
+      console.error("Error deleting employee:", error);
+      return;
+    }
+    set((state) => ({
+      employees: state.employees.filter(e => e.id !== id)
+    }));
+  },
+
+  saveAttendance: async (date, data) => {
+    const upserts = Object.keys(data).map(employeeId => ({
+      date,
+      employee_id: employeeId,
+      status: data[employeeId].status,
+      observation: data[employeeId].observation || null
+    }));
+
+    if (upserts.length === 0) return;
+
+    const { error } = await supabase
+      .from('attendance')
+      .upsert(upserts, { onConflict: 'date,employee_id' });
+
+    if (error) {
+      console.error("Error saving attendance:", error);
+      return;
+    }
+
+    set((state) => ({
+      attendance: { ...state.attendance, [date]: { ...state.attendance[date], ...data } },
+      draftAttendance: { ...state.draftAttendance, [date]: {} } // limpa o rascunho após salvar
+    }));
+  },
+
+  setDraftAttendance: (date, data) => set((state) => ({
+    draftAttendance: { ...state.draftAttendance, [date]: { ...state.draftAttendance[date], ...data } }
+  })),
+}));

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useStore, Employee, Status, AttendanceRecord } from "@/store/useStore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,22 +19,18 @@ const statusConfig = {
 };
 
 export default function ApontamentoPage() {
-  const { employees, attendance, saveAttendance } = useStore();
+  const { employees, attendance, draftAttendance, setDraftAttendance, saveAttendance } = useStore();
   const [searchTerm, setSearchTerm] = useState("");
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
-  // Local state for the current day being edited
-  const [currentAttendance, setCurrentAttendance] = useState<Record<string, AttendanceRecord>>({});
-
   // Observation Dialog
   const [obsDialogOpen, setObsDialogOpen] = useState(false);
   const [activeEmpId, setActiveEmpId] = useState<string | null>(null);
   const [tempObs, setTempObs] = useState("");
 
-  useEffect(() => {
-    // Load attendance from store when date changes
+  const currentAttendance = useMemo(() => {
+    const loaded: Record<string, AttendanceRecord> = {};
     if (attendance[date]) {
-      const loaded: Record<string, AttendanceRecord> = {};
       Object.entries(attendance[date]).forEach(([id, record]) => {
         if (typeof record === 'string') {
           loaded[id] = { status: record as Status };
@@ -42,25 +38,25 @@ export default function ApontamentoPage() {
           loaded[id] = record as AttendanceRecord;
         }
       });
-      setCurrentAttendance(loaded);
-    } else {
-      setCurrentAttendance({});
     }
-  }, [date, attendance]);
+    if (draftAttendance[date]) {
+      Object.entries(draftAttendance[date]).forEach(([id, record]) => {
+        loaded[id] = { ...loaded[id], ...record };
+      });
+    }
+    return loaded;
+  }, [date, attendance, draftAttendance]);
 
   const handleStatusChange = (id: string, newStatus: Status) => {
-    setCurrentAttendance(prev => ({ 
-      ...prev, 
-      [id]: { ...(prev[id] || {}), status: newStatus } 
-    }));
+    setDraftAttendance(date, { [id]: { ...(currentAttendance[id] || {}), status: newStatus } });
   };
 
   const markAllAs = (status: Status) => {
-    const newAtt: Record<string, AttendanceRecord> = { ...currentAttendance };
+    const newDrafts: Record<string, AttendanceRecord> = {};
     employees.forEach(emp => {
-      newAtt[emp.id] = { ...(newAtt[emp.id] || {}), status };
+      newDrafts[emp.id] = { ...(currentAttendance[emp.id] || {}), status };
     });
-    setCurrentAttendance(newAtt);
+    setDraftAttendance(date, newDrafts);
   };
 
   const openObsDialog = (empId: string) => {
@@ -71,10 +67,9 @@ export default function ApontamentoPage() {
 
   const saveObservation = () => {
     if (activeEmpId) {
-      setCurrentAttendance(prev => ({
-        ...prev,
-        [activeEmpId]: { ...(prev[activeEmpId] || { status: null }), observation: tempObs }
-      }));
+      setDraftAttendance(date, {
+        [activeEmpId]: { ...(currentAttendance[activeEmpId] || { status: null }), observation: tempObs }
+      });
     }
     setObsDialogOpen(false);
   };

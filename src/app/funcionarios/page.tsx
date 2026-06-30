@@ -17,6 +17,7 @@ export default function FuncionariosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isNewTeam, setIsNewTeam] = useState(false);
   
   const [formData, setFormData] = useState({
     name: "", cpf: "", phone: "", role: "", team: "", admission_date: "", status: "ativo" as 'ativo' | 'inativo'
@@ -31,12 +32,14 @@ export default function FuncionariosPage() {
   const openAddDialog = () => {
     setEditingId(null);
     setFormData({ name: "", cpf: "", phone: "", role: "", team: "", admission_date: "", status: "ativo" });
+    setIsNewTeam(false);
     setIsDialogOpen(true);
   };
 
   const openEditDialog = (emp: Employee) => {
     setEditingId(emp.id);
     setFormData({ ...emp });
+    setIsNewTeam(false);
     setIsDialogOpen(true);
   };
 
@@ -59,6 +62,9 @@ export default function FuncionariosPage() {
       deleteEmployee(id);
     }
   };
+
+  const defaultTeams = ["Alvenaria", "Elétrica", "Hidráulica", "Acabamento", "Geral"];
+  const uniqueTeams = Array.from(new Set([...defaultTeams, ...employees.map(e => e.team)])).filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -94,9 +100,9 @@ export default function FuncionariosPage() {
                 <TableRow>
                   <TableHead>Nome</TableHead>
                   <TableHead>Cargo / Equipe</TableHead>
-                  <TableHead>CPF</TableHead>
-                  <TableHead>Admissão</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden md:table-cell">CPF</TableHead>
+                  <TableHead className="hidden md:table-cell">Admissão</TableHead>
+                  <TableHead className="hidden md:table-cell">Status</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -117,11 +123,11 @@ export default function FuncionariosPage() {
                           <span className="text-xs text-muted-foreground">{emp.team}</span>
                         </div>
                       </TableCell>
-                      <TableCell>{emp.cpf || "-"}</TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">{emp.cpf || "-"}</TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {emp.admission_date ? new Date(emp.admission_date).toLocaleDateString('pt-BR') : "-"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <Badge variant={emp.status === 'ativo' ? 'default' : 'secondary'} 
                                className={emp.status === 'ativo' ? 'bg-emerald-500 hover:bg-emerald-600' : ''}>
                           {emp.status === 'ativo' ? 'Ativo' : 'Inativo'}
@@ -168,18 +174,36 @@ export default function FuncionariosPage() {
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="team" className="text-right">Equipe *</Label>
-              <Select value={formData.team} onValueChange={v => setFormData({...formData, team: v})}>
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Selecione a equipe" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Alvenaria">Alvenaria</SelectItem>
-                  <SelectItem value="Elétrica">Elétrica</SelectItem>
-                  <SelectItem value="Hidráulica">Hidráulica</SelectItem>
-                  <SelectItem value="Acabamento">Acabamento</SelectItem>
-                  <SelectItem value="Geral">Geral</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="col-span-3 space-y-2">
+                <Select value={isNewTeam ? 'nova_equipe' : formData.team} onValueChange={v => {
+                  if (v === 'nova_equipe') {
+                    setIsNewTeam(true);
+                    setFormData({...formData, team: ''});
+                  } else {
+                    setIsNewTeam(false);
+                    setFormData({...formData, team: v});
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a equipe" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueTeams.map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                    <SelectItem value="nova_equipe" className="text-emerald-600 font-medium">+ Adicionar nova equipe</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {isNewTeam && (
+                  <Input 
+                    placeholder="Digite o nome da nova equipe" 
+                    value={formData.team} 
+                    onChange={e => setFormData({...formData, team: e.target.value})} 
+                    autoFocus
+                  />
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="date" className="text-right">Admissão</Label>

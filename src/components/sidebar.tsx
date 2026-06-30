@@ -52,7 +52,10 @@ export function Sidebar() {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background border-t border-border flex items-center justify-around pb-safe">
+      <div 
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t flex items-center justify-around shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.1)]"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
         {navigation.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -60,7 +63,7 @@ export function Sidebar() {
               key={item.name}
               href={item.href}
               className={cn(
-                "flex flex-col items-center justify-center w-full py-3 transition-colors",
+                "flex flex-col items-center justify-center w-full pt-3 pb-2 transition-colors",
                 isActive
                   ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"

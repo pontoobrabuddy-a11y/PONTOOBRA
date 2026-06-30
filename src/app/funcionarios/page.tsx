@@ -135,6 +135,7 @@ export default function FuncionariosPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormState>(defaultForm);
   const [isNewTeam, setIsNewTeam] = useState(false);
+  const [isNewRole, setIsNewRole] = useState(false);
   const [activeTab, setActiveTab] = useState<string | number>("pessoal");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -201,10 +202,24 @@ export default function FuncionariosPage() {
   const defaultTeams = ["Alvenaria", "Elétrica", "Hidráulica", "Acabamento", "Geral"];
   const uniqueTeams = Array.from(new Set([...defaultTeams, ...employees.map((e) => e.team)])).filter(Boolean);
 
+  const defaultRoles = [
+    "Ajudante de pedreiro",
+    "Pedreiro",
+    "Eletricista",
+    "Meio profissional",
+    "Bomb. Hidráulico (encanador)",
+    "Pintor",
+    "Carpinteiro",
+    "Encarregado de obras",
+    "Mestre de obras"
+  ];
+  const uniqueRoles = Array.from(new Set([...defaultRoles, ...employees.map((e) => e.role)])).filter(Boolean);
+
   const openAddDialog = () => {
     setEditingId(null);
     setFormData(defaultForm);
     setIsNewTeam(false);
+    setIsNewRole(false);
     setActiveTab("pessoal");
     setIsDialogOpen(true);
   };
@@ -233,6 +248,7 @@ export default function FuncionariosPage() {
       dismissal_date: emp.dismissal_date || "",
     });
     setIsNewTeam(false);
+    setIsNewRole(false);
     setActiveTab("pessoal");
     setIsDialogOpen(true);
   };
@@ -679,13 +695,42 @@ Ianna - RH e Financeiro`;
                   />
                 </div>
                 {/* Cargo */}
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right text-sm">Cargo *</Label>
-                  <Input
-                    className="col-span-3"
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  />
+                <div className="grid grid-cols-4 items-start gap-4">
+                  <Label className="text-right text-sm pt-2">Cargo *</Label>
+                  <div className="col-span-3 space-y-2">
+                    <Select
+                      value={isNewRole ? "novo_cargo" : formData.role}
+                      onValueChange={(v) => {
+                        if (v === "novo_cargo") {
+                          setIsNewRole(true);
+                          setFormData({ ...formData, role: "" });
+                        } else {
+                          setIsNewRole(false);
+                          setFormData({ ...formData, role: v || "" });
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o cargo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {uniqueRoles.map((r) => (
+                          <SelectItem key={r} value={r}>{r}</SelectItem>
+                        ))}
+                        <SelectItem value="novo_cargo" className="text-emerald-600 font-medium">
+                          + Adicionar novo cargo
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {isNewRole && (
+                      <Input
+                        placeholder="Digite o nome do novo cargo"
+                        value={formData.role}
+                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                        autoFocus
+                      />
+                    )}
+                  </div>
                 </div>
                 {/* Equipe */}
                 <div className="grid grid-cols-4 items-start gap-4">

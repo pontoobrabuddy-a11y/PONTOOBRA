@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Edit2, Trash2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, UserX } from "lucide-react";
 
 export default function FuncionariosPage() {
   const { employees, addEmployee, updateEmployee, deleteEmployee } = useStore();
@@ -58,8 +58,14 @@ export default function FuncionariosPage() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("Tem certeza que deseja remover este funcionário?")) {
+    if (confirm("Tem certeza que deseja apagar o registro deste funcionário? ATENÇÃO: Isso também apagará todo o histórico de presenças dele do banco de dados. Caso queira apenas remover da obra, use a opção 'Demitir'.")) {
       deleteEmployee(id);
+    }
+  };
+
+  const handleFire = (id: string, name: string) => {
+    if (confirm(`Tem certeza que deseja demitir o funcionário ${name}? Ele passará para o status Inativo e deixará de aparecer nos apontamentos diários, mas seu histórico antigo será mantido.`)) {
+      updateEmployee(id, { status: 'inativo' });
     }
   };
 
@@ -129,15 +135,20 @@ export default function FuncionariosPage() {
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         <Badge variant={emp.status === 'ativo' ? 'default' : 'secondary'} 
-                               className={emp.status === 'ativo' ? 'bg-emerald-500 hover:bg-emerald-600' : ''}>
-                          {emp.status === 'ativo' ? 'Ativo' : 'Inativo'}
+                               className={emp.status === 'ativo' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-orange-500 hover:bg-orange-600 text-white border-transparent'}>
+                          {emp.status === 'ativo' ? 'Ativo' : 'Demitido'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(emp)}>
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(emp)} title="Editar">
                           <Edit2 className="h-4 w-4 text-muted-foreground" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(emp.id)}>
+                        {emp.status === 'ativo' && (
+                          <Button variant="ghost" size="icon" onClick={() => handleFire(emp.id, emp.name)} title="Demitir">
+                            <UserX className="h-4 w-4 text-orange-500" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(emp.id)} title="Apagar Registro">
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </TableCell>
@@ -217,7 +228,7 @@ export default function FuncionariosPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ativo">Ativo</SelectItem>
-                  <SelectItem value="inativo">Inativo</SelectItem>
+                  <SelectItem value="inativo">Demitido / Inativo</SelectItem>
                 </SelectContent>
               </Select>
             </div>

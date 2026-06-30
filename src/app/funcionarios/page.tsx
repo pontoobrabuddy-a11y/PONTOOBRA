@@ -181,7 +181,7 @@ export default function FuncionariosPage() {
                     setFormData({...formData, team: ''});
                   } else {
                     setIsNewTeam(false);
-                    setFormData({...formData, team: v});
+                    setFormData({...formData, team: v || ''});
                   }
                 }}>
                   <SelectTrigger>

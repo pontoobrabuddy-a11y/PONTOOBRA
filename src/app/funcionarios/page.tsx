@@ -106,7 +106,7 @@ const defaultForm: FormState = {
   cpf: "",
   phone: "",
   role: "",
-  team: "",
+  team: "Geral",
   admission_date: "",
   employment_type: "",
   pagador: "",
@@ -254,8 +254,8 @@ export default function FuncionariosPage() {
   };
 
   const handleSave = async () => {
-    if (!formData.name || !formData.role || !formData.team) {
-      alert("Preencha os campos obrigatórios: Nome, Cargo e Equipe.");
+    if (!formData.name || !formData.role) {
+      alert("Preencha os campos obrigatórios: Nome e Cargo.");
       return;
     }
     setIsSaving(true);
@@ -266,7 +266,7 @@ export default function FuncionariosPage() {
       cpf: formData.cpf || "",
       phone: formData.phone || "",
       role: formData.role,
-      team: formData.team,
+      team: formData.team || "Geral",
       admission_date: formData.admission_date || "",
       status: (formData.status as Employee["status"]) || "ativo",
       employee_number: formData.employee_number ? Number(formData.employee_number) : undefined,
@@ -518,7 +518,6 @@ Ianna - RH e Financeiro`;
                   <TableHead className="w-12"><Hash className="h-4 w-4" /></TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead className="hidden lg:table-cell">Cargo</TableHead>
-                  <TableHead className="hidden md:table-cell">Equipe</TableHead>
                   <TableHead className="hidden xl:table-cell">Pagador</TableHead>
                   <TableHead className="hidden xl:table-cell">Tipo</TableHead>
                   <TableHead className="hidden lg:table-cell">Salário</TableHead>
@@ -546,7 +545,6 @@ Ianna - RH e Financeiro`;
                         </div>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell text-sm">{emp.role || "-"}</TableCell>
-                      <TableCell className="hidden md:table-cell text-sm">{emp.team || "-"}</TableCell>
                       <TableCell className="hidden xl:table-cell">
                         {emp.pagador ? (
                           <Badge
@@ -724,44 +722,7 @@ Ianna - RH e Financeiro`;
                     )}
                   </div>
                 </div>
-                {/* Equipe */}
-                <div className="grid grid-cols-4 items-start gap-4">
-                  <Label className="text-right text-sm pt-2">Equipe *</Label>
-                  <div className="col-span-3 space-y-2">
-                    <Select
-                      value={isNewTeam ? "nova_equipe" : formData.team}
-                      onValueChange={(v) => {
-                        if (v === "nova_equipe") {
-                          setIsNewTeam(true);
-                          setFormData({ ...formData, team: "" });
-                        } else {
-                          setIsNewTeam(false);
-                          setFormData({ ...formData, team: v || "" });
-                        }
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione a equipe" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {uniqueTeams.map((t) => (
-                          <SelectItem key={t} value={t}>{t}</SelectItem>
-                        ))}
-                        <SelectItem value="nova_equipe" className="text-emerald-600 font-medium">
-                          + Adicionar nova equipe
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {isNewTeam && (
-                      <Input
-                        placeholder="Nome da nova equipe"
-                        value={formData.team}
-                        onChange={(e) => setFormData({ ...formData, team: e.target.value })}
-                        autoFocus
-                      />
-                    )}
-                  </div>
-                </div>
+
                 {/* Data de Admissão */}
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right text-sm">Admissão</Label>

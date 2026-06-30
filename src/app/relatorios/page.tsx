@@ -14,7 +14,7 @@ import { saveAs } from 'file-saver';
 export default function RelatoriosPage() {
   const { employees, attendance } = useStore();
   const [searchTerm, setSearchTerm] = useState("");
-  const [teamFilter, setTeamFilter] = useState("all");
+
   const [monthStr, setMonthStr] = useState<string>("2026-06");
   const [viewMode, setViewMode] = useState<'resumo' | 'espelho'>('resumo');
 
@@ -59,8 +59,7 @@ export default function RelatoriosPage() {
 
   const filteredData = reportData.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesTeam = teamFilter === "all" || item.team === teamFilter;
-    return matchesSearch && matchesTeam;
+    return matchesSearch;
   });
 
   const exportExcel = async () => {
@@ -260,21 +259,7 @@ export default function RelatoriosPage() {
                 />
               </div>
             </div>
-            <div className="w-full md:w-[200px]">
-              <Select value={teamFilter} onValueChange={(v) => setTeamFilter(v || '')}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Equipe" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as Equipes</SelectItem>
-                  <SelectItem value="Alvenaria">Alvenaria</SelectItem>
-                  <SelectItem value="Elétrica">Elétrica</SelectItem>
-                  <SelectItem value="Hidráulica">Hidráulica</SelectItem>
-                  <SelectItem value="Acabamento">Acabamento</SelectItem>
-                  <SelectItem value="Geral">Geral</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+
             <div className="w-full md:w-[200px]">
               <Input 
                 type="month" 
@@ -291,7 +276,6 @@ export default function RelatoriosPage() {
                 {viewMode === 'resumo' ? (
                   <TableRow>
                     <TableHead>Funcionário</TableHead>
-                    <TableHead>Equipe</TableHead>
                     <TableHead className="text-center">Presenças</TableHead>
                     <TableHead className="text-center">Meias Pres.</TableHead>
                     <TableHead className="text-center text-red-500">Faltas</TableHead>
@@ -316,7 +300,7 @@ export default function RelatoriosPage() {
               <TableBody>
                 {filteredData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={viewMode === 'resumo' ? 8 : days.length + 1} className="text-center py-6 text-muted-foreground">
+                    <TableCell colSpan={viewMode === 'resumo' ? 7 : days.length + 1} className="text-center py-6 text-muted-foreground">
                       Nenhum dado encontrado para o período.
                     </TableCell>
                   </TableRow>
@@ -328,7 +312,6 @@ export default function RelatoriosPage() {
                       return (
                         <TableRow key={item.id}>
                           <TableCell className="font-medium">{item.name}</TableCell>
-                          <TableCell>{item.team}</TableCell>
                           <TableCell className="text-center">{item.presences}</TableCell>
                           <TableCell className="text-center">{item.half_presences}</TableCell>
                           <TableCell className="text-center text-red-500 font-medium">{item.absences}</TableCell>

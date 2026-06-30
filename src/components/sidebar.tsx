@@ -51,8 +51,8 @@ export function Sidebar() {
   return (
     <>
       {/* Desktop Sidebar */}
-      <div className="hidden border-r bg-sidebar md:block w-64 min-h-screen shrink-0">
-        <div className="flex h-full max-h-screen flex-col gap-2">
+      <div className="hidden border-r bg-sidebar md:flex md:flex-col w-64 h-screen sticky top-0 shrink-0">
+        <div className="flex h-full flex-col gap-2">
           <div className="flex h-14 items-center border-b border-sidebar-border px-4 lg:h-[60px] lg:px-6">
             <Link href="/" className="flex items-center gap-2 font-semibold text-sidebar-foreground">
               <HardHat className="h-6 w-6 text-sidebar-ring" />

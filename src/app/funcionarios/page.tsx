@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useStore, Employee } from "@/store/useStore";
+import { useState, useEffect, useMemo } from "react";
+import { useStore, Employee, SalaryHistory } from "@/store/useStore";
+import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,93 +11,487 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Edit2, Trash2, UserX } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Plus, Search, Edit2, Trash2, UserX, DollarSign,
+  ClipboardList, Mail, ArrowUpDown, Hash, Copy, Check
+} from "lucide-react";
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function formatDate(dateStr: string | undefined): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("pt-BR");
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+function subtractDays(dateStr: string, days: number): string {
+  return addDays(dateStr, -days);
+}
+
+function calcLastWorkDate(emp: Employee): string {
+  if (emp.dismissal_type === "aviso_empresa" && emp.notice_end_date) {
+    return subtractDays(emp.notice_end_date, 7);
+  }
+  if (emp.dismissal_type === "aviso_funcionario" && emp.notice_start_date) {
+    return addDays(emp.notice_start_date, 30);
+  }
+  if (emp.dismissal_type === "sem_aviso" && emp.dismissal_date) {
+    return emp.dismissal_date;
+  }
+  return "";
+}
+
+function calcWorkedTime(admission: string, end?: string): string {
+  if (!admission) return "-";
+  const start = new Date(admission + "T00:00:00");
+  const finish = end ? new Date(end + "T00:00:00") : new Date();
+  const diffMs = finish.getTime() - start.getTime();
+  if (diffMs < 0) return "-";
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const years = Math.floor(days / 365);
+  const months = Math.floor((days % 365) / 30);
+  const remDays = days % 30;
+  const parts: string[] = [];
+  if (years > 0) parts.push(`${years} ano${years > 1 ? "s" : ""}`);
+  if (months > 0) parts.push(`${months} mês${months > 1 ? "es" : ""}`);
+  if (remDays > 0 || parts.length === 0) parts.push(`${remDays} dia${remDays !== 1 ? "s" : ""}`);
+  return parts.join(", ");
+}
+
+function formatCurrency(val: number | undefined): string {
+  if (val === undefined || val === null) return "-";
+  return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+const PAGADOR_INFO = {
+  BUDDY: { cnpj: "45.689.000/0001-89", nome: "GENECY CONSTRUCOES E SERVICOS LTDA" },
+  CASANA: { cnpj: "50.251.097/0001-83", nome: "BUDDY & GENECY CONSTRUTORA LTDA" },
+};
+
+// ─── Form State Type ─────────────────────────────────────────────────────────
+
+type FormState = {
+  employee_number: string;
+  name: string;
+  nickname: string;
+  cpf: string;
+  phone: string;
+  role: string;
+  team: string;
+  admission_date: string;
+  employment_type: string;
+  pagador: string;
+  salary: string;
+  pix_type: string;
+  pix_key: string;
+  salary_family: boolean;
+  status: string;
+  dismissal_type: string;
+  notice_start_date: string;
+  notice_end_date: string;
+  dismissal_date: string;
+};
+
+const defaultForm: FormState = {
+  employee_number: "",
+  name: "",
+  nickname: "",
+  cpf: "",
+  phone: "",
+  role: "",
+  team: "",
+  admission_date: "",
+  employment_type: "",
+  pagador: "",
+  salary: "",
+  pix_type: "",
+  pix_key: "",
+  salary_family: false,
+  status: "ativo",
+  dismissal_type: "",
+  notice_start_date: "",
+  notice_end_date: "",
+  dismissal_date: "",
+};
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function FuncionariosPage() {
-  const { employees, addEmployee, updateEmployee, deleteEmployee } = useStore();
+  const { employees, addEmployee, updateEmployee, deleteEmployee, addSalaryHistory } = useStore();
+
+  // ── List state ──
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState<"number" | "name">("number");
+
+  // ── Main dialog ──
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<FormState>(defaultForm);
   const [isNewTeam, setIsNewTeam] = useState(false);
-  
-  const [formData, setFormData] = useState({
-    name: "", cpf: "", phone: "", role: "", team: "", admission_date: "", status: "ativo" as 'ativo' | 'inativo'
-  });
+  const [activeTab, setActiveTab] = useState<string | number>("pessoal");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const filteredEmployees = employees.filter(emp => 
-    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    emp.cpf.includes(searchTerm) ||
-    emp.role.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // ── Salary history modal ──
+  const [salaryEmp, setSalaryEmp] = useState<Employee | null>(null);
+  const [salaryHistory, setSalaryHistory] = useState<SalaryHistory[]>([]);
+  const [salaryForm, setSalaryForm] = useState({ effective_date: "", new_salary: "", notes: "" });
+  const [isSalaryLoading, setIsSalaryLoading] = useState(false);
+  const [isSalaryDialogOpen, setIsSalaryDialogOpen] = useState(false);
+
+  // ── Checklist modal ──
+  const [checklistEmp, setChecklistEmp] = useState<Employee | null>(null);
+  const [isChecklistOpen, setIsChecklistOpen] = useState(false);
+  const [checklistChecked, setChecklistChecked] = useState<Record<string, boolean>>({});
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  // ── Email modal ──
+  const [emailEmp, setEmailEmp] = useState<Employee | null>(null);
+  const [emailType, setEmailType] = useState<"admissao" | "demissao">("admissao");
+  const [isEmailOpen, setIsEmailOpen] = useState(false);
+  const [emailText, setEmailText] = useState("");
+  const [emailCopySuccess, setEmailCopySuccess] = useState(false);
+
+  // ─── Derived computed values ─────────────────────────────────────────────
+
+  const lastWorkDateCalc = useMemo((): string => {
+    const emp = {
+      dismissal_type: formData.dismissal_type as Employee["dismissal_type"],
+      notice_end_date: formData.notice_end_date,
+      notice_start_date: formData.notice_start_date,
+      dismissal_date: formData.dismissal_date,
+    } as Employee;
+    return calcLastWorkDate(emp);
+  }, [formData.dismissal_type, formData.notice_end_date, formData.notice_start_date, formData.dismissal_date]);
+
+  const workedTimeCalc = useMemo((): string => {
+    if (!formData.admission_date) return "-";
+    const endDate = formData.dismissal_date || undefined;
+    return calcWorkedTime(formData.admission_date, endDate);
+  }, [formData.admission_date, formData.dismissal_date]);
+
+  // ─── Filter & sort ───────────────────────────────────────────────────────
+
+  const filteredEmployees = useMemo(() => {
+    const q = searchTerm.toLowerCase();
+    const filtered = employees.filter(
+      (emp) =>
+        emp.name.toLowerCase().includes(q) ||
+        (emp.cpf || "").includes(q) ||
+        (emp.role || "").toLowerCase().includes(q)
+    );
+    if (sortBy === "name") {
+      return [...filtered].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    }
+    return [...filtered].sort((a, b) => {
+      const na = a.employee_number ?? 99999;
+      const nb = b.employee_number ?? 99999;
+      return na - nb;
+    });
+  }, [employees, searchTerm, sortBy]);
+
+  // ─── Dialog helpers ──────────────────────────────────────────────────────
+
+  const defaultTeams = ["Alvenaria", "Elétrica", "Hidráulica", "Acabamento", "Geral"];
+  const uniqueTeams = Array.from(new Set([...defaultTeams, ...employees.map((e) => e.team)])).filter(Boolean);
 
   const openAddDialog = () => {
     setEditingId(null);
-    setFormData({ name: "", cpf: "", phone: "", role: "", team: "", admission_date: "", status: "ativo" });
+    setFormData(defaultForm);
     setIsNewTeam(false);
+    setActiveTab("pessoal");
     setIsDialogOpen(true);
   };
 
   const openEditDialog = (emp: Employee) => {
     setEditingId(emp.id);
-    setFormData({ ...emp });
+    setFormData({
+      employee_number: emp.employee_number !== undefined ? String(emp.employee_number) : "",
+      name: emp.name || "",
+      nickname: emp.nickname || "",
+      cpf: emp.cpf || "",
+      phone: emp.phone || "",
+      role: emp.role || "",
+      team: emp.team || "",
+      admission_date: emp.admission_date || "",
+      employment_type: emp.employment_type || "",
+      pagador: emp.pagador || "",
+      salary: emp.salary !== undefined ? String(emp.salary) : "",
+      pix_type: emp.pix_type || "",
+      pix_key: emp.pix_key || "",
+      salary_family: emp.salary_family || false,
+      status: emp.status || "ativo",
+      dismissal_type: emp.dismissal_type || "",
+      notice_start_date: emp.notice_start_date || "",
+      notice_end_date: emp.notice_end_date || "",
+      dismissal_date: emp.dismissal_date || "",
+    });
     setIsNewTeam(false);
+    setActiveTab("pessoal");
     setIsDialogOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name || !formData.role || !formData.team) {
-      alert("Preencha os campos obrigatórios (Nome, Cargo, Equipe).");
+      alert("Preencha os campos obrigatórios: Nome, Cargo e Equipe.");
       return;
     }
-    
+    setIsSaving(true);
+
+    const payload: Omit<Employee, "id"> = {
+      name: formData.name,
+      nickname: formData.nickname || undefined,
+      cpf: formData.cpf || "",
+      phone: formData.phone || "",
+      role: formData.role,
+      team: formData.team,
+      admission_date: formData.admission_date || "",
+      status: (formData.status as Employee["status"]) || "ativo",
+      employee_number: formData.employee_number ? Number(formData.employee_number) : undefined,
+      employment_type: (formData.employment_type as Employee["employment_type"]) || undefined,
+      pagador: (formData.pagador as Employee["pagador"]) || undefined,
+      salary: formData.salary ? Number(formData.salary) : undefined,
+      pix_type: (formData.pix_type as Employee["pix_type"]) || undefined,
+      pix_key: formData.pix_key || undefined,
+      salary_family: formData.salary_family,
+      dismissal_type: (formData.dismissal_type as Employee["dismissal_type"]) || undefined,
+      notice_start_date: formData.notice_start_date || undefined,
+      notice_end_date: formData.notice_end_date || undefined,
+      last_work_date: lastWorkDateCalc || undefined,
+      dismissal_date: formData.dismissal_date || undefined,
+    };
+
     if (editingId) {
-      updateEmployee(editingId, formData);
+      await updateEmployee(editingId, payload);
     } else {
-      addEmployee(formData);
+      await addEmployee(payload);
     }
+    setIsSaving(false);
     setIsDialogOpen(false);
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("Tem certeza que deseja apagar o registro deste funcionário? ATENÇÃO: Isso também apagará todo o histórico de presenças dele do banco de dados. Caso queira apenas remover da obra, use a opção 'Demitir'.")) {
+    if (
+      confirm(
+        "Tem certeza que deseja apagar o registro deste funcionário? ATENÇÃO: Isso também apagará todo o histórico de presenças. Prefira usar 'Demitir' para manter o histórico."
+      )
+    ) {
       deleteEmployee(id);
     }
   };
 
-  const handleFire = (id: string, name: string) => {
-    if (confirm(`Tem certeza que deseja demitir o funcionário ${name}? Ele passará para o status Inativo e deixará de aparecer nos apontamentos diários, mas seu histórico antigo será mantido.`)) {
-      updateEmployee(id, { status: 'inativo' });
-    }
+  const handleFire = (emp: Employee) => {
+    openEditDialog(emp);
+    setActiveTab("desligamento");
   };
 
-  const defaultTeams = ["Alvenaria", "Elétrica", "Hidráulica", "Acabamento", "Geral"];
-  const uniqueTeams = Array.from(new Set([...defaultTeams, ...employees.map(e => e.team)])).filter(Boolean);
+  // ─── Status badge ────────────────────────────────────────────────────────
+
+  function StatusBadge({ status }: { status: string }) {
+    if (status === "ativo") {
+      return <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white border-transparent">Ativo</Badge>;
+    }
+    if (status === "aviso_previo") {
+      return <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white border-transparent">Aviso Prévio</Badge>;
+    }
+    return <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-transparent">Demitido</Badge>;
+  }
+
+  // ─── Salary History ──────────────────────────────────────────────────────
+
+  const openSalaryDialog = async (emp: Employee) => {
+    setSalaryEmp(emp);
+    setSalaryForm({ effective_date: "", new_salary: "", notes: "" });
+    setIsSalaryLoading(true);
+    setIsSalaryDialogOpen(true);
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("salary_history")
+      .select("*")
+      .eq("employee_id", emp.id)
+      .order("effective_date", { ascending: false });
+    if (error) console.error("Error fetching salary history:", error);
+    setSalaryHistory(data || []);
+    setIsSalaryLoading(false);
+  };
+
+  const handleAddSalary = async () => {
+    if (!salaryEmp || !salaryForm.effective_date || !salaryForm.new_salary) {
+      alert("Preencha a data efetiva e o novo salário.");
+      return;
+    }
+    const newSal = Number(salaryForm.new_salary);
+    const oldSal = salaryEmp.salary || 0;
+    await addSalaryHistory({
+      employee_id: salaryEmp.id,
+      old_salary: oldSal,
+      new_salary: newSal,
+      effective_date: salaryForm.effective_date,
+      notes: salaryForm.notes || undefined,
+    });
+    await updateEmployee(salaryEmp.id, { salary: newSal });
+    setSalaryEmp({ ...salaryEmp, salary: newSal });
+    setSalaryForm({ effective_date: "", new_salary: "", notes: "" });
+    // Refresh list
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("salary_history")
+      .select("*")
+      .eq("employee_id", salaryEmp.id)
+      .order("effective_date", { ascending: false });
+    setSalaryHistory(data || []);
+  };
+
+  // ─── Checklist ───────────────────────────────────────────────────────────
+
+  const CHECKLIST_BASE = [
+    "Identidade (RG)",
+    "CPF",
+    "Reservista (se aplicável)",
+    "Título Eleitoral",
+    "Carteira de Trabalho (física ou digital PDF)",
+    "Certidão de Nascimento ou Casamento",
+    "Comprovante de Residência",
+  ];
+
+  const openChecklist = (emp: Employee) => {
+    setChecklistEmp(emp);
+    setChecklistChecked({});
+    setCopySuccess(false);
+    setIsChecklistOpen(true);
+  };
+
+  const getChecklistItems = (emp: Employee | null): string[] => {
+    const items = [...CHECKLIST_BASE];
+    if (emp?.salary_family) {
+      items.push("Certidão de Nascimento dos filhos até 14 anos (Salário Família)");
+    }
+    return items;
+  };
+
+  const copyChecklist = async () => {
+    if (!checklistEmp) return;
+    const items = getChecklistItems(checklistEmp);
+    const text =
+      `Documentos necessários — ${checklistEmp.name}\n\n` +
+      items.map((item) => `${checklistChecked[item] ? "✅" : "☐"} ${item}`).join("\n");
+    await navigator.clipboard.writeText(text);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+  };
+
+  // ─── Email generator ─────────────────────────────────────────────────────
+
+  function buildAdmissaoEmail(emp: Employee): string {
+    const pagadorInfo = emp.pagador ? PAGADOR_INFO[emp.pagador] : null;
+    return `Assunto: Solicitação de Admissão - ${emp.name}
+
+Prezados,
+
+Solicitamos a admissão do(a) Sr(a). ${emp.name}
+Cargo: ${emp.role || ""}
+Data de Admissão: ${formatDate(emp.admission_date)}
+Salário: ${formatCurrency(emp.salary)}
+Tipo de Contrato: ${emp.employment_type || ""}
+
+Observações:
+[CAMPO LIVRE]
+
+Atenciosamente,
+Ianna - RH e Financeiro
+${pagadorInfo ? pagadorInfo.nome : ""}
+CNPJ: ${pagadorInfo ? pagadorInfo.cnpj : ""}`;
+  }
+
+  function buildDemissaoEmail(emp: Employee): string {
+    const lastWork = calcLastWorkDate(emp);
+    const situacaoMap: Record<string, string> = {
+      aviso_empresa: "Demissão pela empresa com aviso",
+      sem_aviso: "Demissão pela empresa sem aviso",
+      aviso_funcionario: "Pedido de Demissão",
+    };
+    return `Assunto: Solicitação de ${emp.dismissal_type === "aviso_empresa" || emp.dismissal_type === "aviso_funcionario" ? "Aviso Prévio" : "Demissão"} - ${emp.name}
+
+Prezados,
+
+Comunicamos o desligamento do(a) Sr(a). ${emp.name}
+Cargo: ${emp.role || ""}
+Situação: ${emp.dismissal_type ? situacaoMap[emp.dismissal_type] || "" : ""}
+Data do Aviso: ${formatDate(emp.notice_start_date)}
+Último Dia de Aviso: ${formatDate(emp.notice_end_date)}
+Último Dia de Trabalho: ${formatDate(lastWork)}
+
+Relatório de Presença:
+[CAMPO LIVRE]
+
+Descontos/Valores já pagos:
+[CAMPO LIVRE]
+
+Observações:
+[CAMPO LIVRE]
+
+Atenciosamente,
+Ianna - RH e Financeiro`;
+  }
+
+  const openEmailDialog = (emp: Employee, type: "admissao" | "demissao") => {
+    setEmailEmp(emp);
+    setEmailType(type);
+    setEmailText(type === "admissao" ? buildAdmissaoEmail(emp) : buildDemissaoEmail(emp));
+    setEmailCopySuccess(false);
+    setIsEmailOpen(true);
+  };
+
+  const copyEmail = async () => {
+    await navigator.clipboard.writeText(emailText);
+    setEmailCopySuccess(true);
+    setTimeout(() => setEmailCopySuccess(false), 2000);
+  };
+
+  // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-primary">Funcionários</h1>
-          <p className="text-muted-foreground mt-2">Gerencie os trabalhadores da obra.</p>
+          <p className="text-muted-foreground mt-1">Gerencie os trabalhadores da obra.</p>
         </div>
         <Button onClick={openAddDialog} className="bg-primary hover:bg-primary/90 text-white">
           <Plus className="mr-2 h-4 w-4" /> Novo Funcionário
         </Button>
       </div>
 
+      {/* List Card */}
       <Card>
         <CardHeader>
           <CardTitle>Lista de Funcionários</CardTitle>
-          <div className="pt-4">
-            <div className="relative max-w-md">
+          <div className="flex flex-col sm:flex-row gap-3 pt-3">
+            <div className="relative flex-1 max-w-md">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por nome, CPF ou cargo..."
+                placeholder="Buscar por nome, CPF/CNPJ ou cargo..."
                 className="pl-8"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSortBy(sortBy === "number" ? "name" : "number")}
+              className="whitespace-nowrap"
+            >
+              <ArrowUpDown className="mr-2 h-4 w-4" />
+              {sortBy === "number" ? "Ordenar por Nome" : "Ordenar por Nº"}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -104,10 +499,13 @@ export default function FuncionariosPage() {
             <Table>
               <TableHeader className="bg-slate-50 dark:bg-slate-900">
                 <TableRow>
+                  <TableHead className="w-12"><Hash className="h-4 w-4" /></TableHead>
                   <TableHead>Nome</TableHead>
-                  <TableHead>Cargo / Equipe</TableHead>
-                  <TableHead className="hidden md:table-cell">CPF</TableHead>
-                  <TableHead className="hidden md:table-cell">Admissão</TableHead>
+                  <TableHead className="hidden lg:table-cell">Cargo</TableHead>
+                  <TableHead className="hidden md:table-cell">Equipe</TableHead>
+                  <TableHead className="hidden xl:table-cell">Pagador</TableHead>
+                  <TableHead className="hidden xl:table-cell">Tipo</TableHead>
+                  <TableHead className="hidden lg:table-cell">Salário</TableHead>
                   <TableHead className="hidden md:table-cell">Status</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -115,42 +513,90 @@ export default function FuncionariosPage() {
               <TableBody>
                 {filteredEmployees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       Nenhum funcionário encontrado.
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredEmployees.map((emp) => (
-                    <TableRow key={emp.id}>
-                      <TableCell className="font-medium">{emp.name}</TableCell>
+                    <TableRow key={emp.id} className={emp.status === "inativo" ? "opacity-60" : ""}>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {emp.employee_number ?? "-"}
+                      </TableCell>
                       <TableCell>
-                        <div className="flex flex-col">
-                          <span>{emp.role}</span>
-                          <span className="text-xs text-muted-foreground">{emp.team}</span>
+                        <div>
+                          <p className="font-medium">{emp.name}</p>
+                          {emp.nickname && <p className="text-xs text-muted-foreground">{emp.nickname}</p>}
                         </div>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell">{emp.cpf || "-"}</TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        {emp.admission_date ? new Date(emp.admission_date).toLocaleDateString('pt-BR') : "-"}
+                      <TableCell className="hidden lg:table-cell text-sm">{emp.role || "-"}</TableCell>
+                      <TableCell className="hidden md:table-cell text-sm">{emp.team || "-"}</TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        {emp.pagador ? (
+                          <Badge
+                            className={
+                              emp.pagador === "BUDDY"
+                                ? "bg-blue-500 hover:bg-blue-600 text-white border-transparent"
+                                : "bg-emerald-600 hover:bg-emerald-700 text-white border-transparent"
+                            }
+                          >
+                            {emp.pagador}
+                          </Badge>
+                        ) : "-"}
                       </TableCell>
+                      <TableCell className="hidden xl:table-cell text-sm">{emp.employment_type || "-"}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-sm">{formatCurrency(emp.salary)}</TableCell>
                       <TableCell className="hidden md:table-cell">
-                        <Badge variant={emp.status === 'ativo' ? 'default' : 'secondary'} 
-                               className={emp.status === 'ativo' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-orange-500 hover:bg-orange-600 text-white border-transparent'}>
-                          {emp.status === 'ativo' ? 'Ativo' : 'Demitido'}
-                        </Badge>
+                        <StatusBadge status={emp.status || "ativo"} />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(emp)} title="Editar">
-                          <Edit2 className="h-4 w-4 text-muted-foreground" />
-                        </Button>
-                        {emp.status === 'ativo' && (
-                          <Button variant="ghost" size="icon" onClick={() => handleFire(emp.id, emp.name)} title="Demitir">
-                            <UserX className="h-4 w-4 text-orange-500" />
+                        <div className="flex justify-end gap-0.5 flex-wrap">
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(emp)} title="Editar">
+                            <Edit2 className="h-4 w-4 text-muted-foreground" />
                           </Button>
-                        )}
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(emp.id)} title="Apagar Registro">
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openSalaryDialog(emp)}
+                            title="Histórico Salarial"
+                          >
+                            <DollarSign className="h-4 w-4 text-emerald-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openChecklist(emp)}
+                            title="Checklist de Documentos"
+                          >
+                            <ClipboardList className="h-4 w-4 text-blue-500" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEmailDialog(emp, emp.status === "inativo" || emp.status === "aviso_previo" ? "demissao" : "admissao")}
+                            title="Gerar E-mail"
+                          >
+                            <Mail className="h-4 w-4 text-purple-500" />
+                          </Button>
+                          {emp.status === "ativo" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleFire(emp)}
+                              title="Demitir / Aviso Prévio"
+                            >
+                              <UserX className="h-4 w-4 text-orange-500" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(emp.id)}
+                            title="Apagar Registro"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -161,81 +607,531 @@ export default function FuncionariosPage() {
         </CardContent>
       </Card>
 
+      {/* ── Main Add/Edit Dialog ── */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar Funcionário" : "Novo Funcionário"}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="name" className="text-right">Nome *</Label>
-              <Input id="name" className="col-span-3" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="cpf" className="text-right">CPF</Label>
-              <Input id="cpf" className="col-span-3" value={formData.cpf} onChange={e => setFormData({...formData, cpf: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="phone" className="text-right">Telefone</Label>
-              <Input id="phone" className="col-span-3" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="role" className="text-right">Cargo *</Label>
-              <Input id="role" className="col-span-3" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="team" className="text-right">Equipe *</Label>
-              <div className="col-span-3 space-y-2">
-                <Select value={isNewTeam ? 'nova_equipe' : formData.team} onValueChange={v => {
-                  if (v === 'nova_equipe') {
-                    setIsNewTeam(true);
-                    setFormData({...formData, team: ''});
-                  } else {
-                    setIsNewTeam(false);
-                    setFormData({...formData, team: v || ''});
-                  }
-                }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a equipe" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {uniqueTeams.map(t => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
-                    <SelectItem value="nova_equipe" className="text-emerald-600 font-medium">+ Adicionar nova equipe</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                {isNewTeam && (
-                  <Input 
-                    placeholder="Digite o nome da nova equipe" 
-                    value={formData.team} 
-                    onChange={e => setFormData({...formData, team: e.target.value})} 
-                    autoFocus
+
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v)}
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="pessoal" className="flex-1">Dados Pessoais</TabsTrigger>
+              <TabsTrigger value="financeiro" className="flex-1">Financeiro</TabsTrigger>
+              {editingId && (
+                <TabsTrigger value="desligamento" className="flex-1">Desligamento</TabsTrigger>
+              )}
+            </TabsList>
+
+            {/* ── Aba 1: Dados Pessoais ── */}
+            <TabsContent value="pessoal">
+              <div className="grid gap-4 py-4">
+                {/* Nº Contabilidade */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Nº Contab.</Label>
+                  <Input
+                    type="number"
+                    className="col-span-3"
+                    placeholder="Ex: 42"
+                    value={formData.employee_number}
+                    onChange={(e) => setFormData({ ...formData, employee_number: e.target.value })}
                   />
-                )}
+                </div>
+                {/* Nome */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Nome *</Label>
+                  <Input
+                    className="col-span-3"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  />
+                </div>
+                {/* Apelido */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Apelido</Label>
+                  <Input
+                    className="col-span-3"
+                    value={formData.nickname}
+                    onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
+                  />
+                </div>
+                {/* CPF / CNPJ */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">CPF/CNPJ *</Label>
+                  <Input
+                    className="col-span-3"
+                    placeholder="000.000.000-00 ou 00.000.000/0001-00"
+                    value={formData.cpf}
+                    onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
+                  />
+                </div>
+                {/* Telefone */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Telefone</Label>
+                  <Input
+                    className="col-span-3"
+                    placeholder="(00) 00000-0000"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  />
+                </div>
+                {/* Cargo */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Cargo *</Label>
+                  <Input
+                    className="col-span-3"
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  />
+                </div>
+                {/* Equipe */}
+                <div className="grid grid-cols-4 items-start gap-4">
+                  <Label className="text-right text-sm pt-2">Equipe *</Label>
+                  <div className="col-span-3 space-y-2">
+                    <Select
+                      value={isNewTeam ? "nova_equipe" : formData.team}
+                      onValueChange={(v) => {
+                        if (v === "nova_equipe") {
+                          setIsNewTeam(true);
+                          setFormData({ ...formData, team: "" });
+                        } else {
+                          setIsNewTeam(false);
+                          setFormData({ ...formData, team: v || "" });
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a equipe" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {uniqueTeams.map((t) => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                        <SelectItem value="nova_equipe" className="text-emerald-600 font-medium">
+                          + Adicionar nova equipe
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {isNewTeam && (
+                      <Input
+                        placeholder="Nome da nova equipe"
+                        value={formData.team}
+                        onChange={(e) => setFormData({ ...formData, team: e.target.value })}
+                        autoFocus
+                      />
+                    )}
+                  </div>
+                </div>
+                {/* Data de Admissão */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Admissão</Label>
+                  <Input
+                    type="date"
+                    className="col-span-3"
+                    value={formData.admission_date}
+                    onChange={(e) => setFormData({ ...formData, admission_date: e.target.value })}
+                  />
+                </div>
               </div>
+            </TabsContent>
+
+            {/* ── Aba 2: Financeiro ── */}
+            <TabsContent value="financeiro">
+              <div className="grid gap-4 py-4">
+                {/* Tipo de Vínculo */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Vínculo</Label>
+                  <Select
+                    value={formData.employment_type}
+                    onValueChange={(v) => setFormData({ ...formData, employment_type: v || "" })}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Tipo de contrato" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CLT">CLT</SelectItem>
+                      <SelectItem value="PJ">PJ (Pessoa Jurídica)</SelectItem>
+                      <SelectItem value="MEI">MEI</SelectItem>
+                      <SelectItem value="Avulso">Avulso</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Pagador */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Pagador</Label>
+                  <Select
+                    value={formData.pagador}
+                    onValueChange={(v) => setFormData({ ...formData, pagador: v || "" })}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Selecione o pagador" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BUDDY">
+                        BUDDY — GENECY CONSTRUCOES (CNPJ 45.689.000/0001-89)
+                      </SelectItem>
+                      <SelectItem value="CASANA">
+                        CASANA — BUDDY &amp; GENECY CONSTRUTORA (CNPJ 50.251.097/0001-83)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Salário Fixo */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Salário (R$)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    className="col-span-3"
+                    placeholder="0,00"
+                    value={formData.salary}
+                    onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
+                  />
+                </div>
+                {/* Tipo de Chave PIX */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Tipo PIX</Label>
+                  <Select
+                    value={formData.pix_type}
+                    onValueChange={(v) => setFormData({ ...formData, pix_type: v || "" })}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Tipo de chave PIX" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CPF">CPF</SelectItem>
+                      <SelectItem value="CNPJ">CNPJ</SelectItem>
+                      <SelectItem value="Telefone">Telefone</SelectItem>
+                      <SelectItem value="Email">E-mail</SelectItem>
+                      <SelectItem value="Aleatoria">Chave Aleatória</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Chave PIX */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Chave PIX</Label>
+                  <Input
+                    className="col-span-3"
+                    placeholder="Informe a chave PIX"
+                    value={formData.pix_key}
+                    onChange={(e) => setFormData({ ...formData, pix_key: e.target.value })}
+                  />
+                </div>
+                {/* Salário Família */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Salário Família</Label>
+                  <div className="col-span-3 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="salary_family"
+                      className="h-4 w-4 rounded"
+                      checked={formData.salary_family}
+                      onChange={(e) => setFormData({ ...formData, salary_family: e.target.checked })}
+                    />
+                    <Label htmlFor="salary_family" className="text-sm cursor-pointer">
+                      Recebe Salário Família (somente ajudantes)
+                    </Label>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* ── Aba 3: Desligamento (só no modo edição) ── */}
+            {editingId && (
+              <TabsContent value="desligamento">
+                <div className="grid gap-4 py-4">
+                  {/* Status */}
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right text-sm">Status</Label>
+                    <Select
+                      value={formData.status}
+                      onValueChange={(v) => setFormData({ ...formData, status: v || "ativo" })}
+                    >
+                      <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Status do funcionário" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ativo">Ativo</SelectItem>
+                        <SelectItem value="aviso_previo">Em Aviso Prévio</SelectItem>
+                        <SelectItem value="inativo">Demitido</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Tipo de Demissão */}
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right text-sm">Tipo</Label>
+                    <Select
+                      value={formData.dismissal_type}
+                      onValueChange={(v) => setFormData({ ...formData, dismissal_type: v || "" })}
+                    >
+                      <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Tipo de demissão" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="aviso_empresa">Demissão Empresa com Aviso</SelectItem>
+                        <SelectItem value="sem_aviso">Demissão Empresa sem Aviso</SelectItem>
+                        <SelectItem value="aviso_funcionario">Pedido de Demissão</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Data início aviso */}
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right text-sm">Início Aviso</Label>
+                    <Input
+                      type="date"
+                      className="col-span-3"
+                      value={formData.notice_start_date}
+                      onChange={(e) => setFormData({ ...formData, notice_start_date: e.target.value })}
+                    />
+                  </div>
+                  {/* Data fim aviso (contabilidade) */}
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right text-sm">Fim Aviso</Label>
+                    <Input
+                      type="date"
+                      className="col-span-3"
+                      value={formData.notice_end_date}
+                      onChange={(e) => setFormData({ ...formData, notice_end_date: e.target.value })}
+                    />
+                  </div>
+                  {/* Último Dia de Trabalho (calculado) */}
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right text-sm text-muted-foreground">Últ. Dia Trab.</Label>
+                    <div className="col-span-3">
+                      <Input
+                        readOnly
+                        value={lastWorkDateCalc ? formatDate(lastWorkDateCalc) : "—"}
+                        className="bg-muted cursor-not-allowed text-muted-foreground"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formData.dismissal_type === "aviso_empresa" && "Fim do aviso − 7 dias corridos"}
+                        {formData.dismissal_type === "aviso_funcionario" && "Início do aviso + 30 dias corridos"}
+                        {formData.dismissal_type === "sem_aviso" && "Igual à data de demissão direta"}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Data de demissão direta (sem aviso) */}
+                  {formData.dismissal_type === "sem_aviso" && (
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label className="text-right text-sm">Data Demissão</Label>
+                      <Input
+                        type="date"
+                        className="col-span-3"
+                        value={formData.dismissal_date}
+                        onChange={(e) => setFormData({ ...formData, dismissal_date: e.target.value })}
+                      />
+                    </div>
+                  )}
+                  {/* Tempo trabalhado */}
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right text-sm text-muted-foreground">Tempo Trab.</Label>
+                    <div className="col-span-3">
+                      <Input
+                        readOnly
+                        value={workedTimeCalc}
+                        className="bg-muted cursor-not-allowed text-muted-foreground"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Calculado desde a admissão até hoje (ou data de demissão).
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            )}
+          </Tabs>
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Salary History Dialog ── */}
+      <Dialog open={isSalaryDialogOpen} onOpenChange={setIsSalaryDialogOpen}>
+        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Histórico Salarial — {salaryEmp?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* Salário atual */}
+            <div className="rounded-lg bg-muted p-3 text-sm">
+              Salário atual:{" "}
+              <span className="font-semibold">{formatCurrency(salaryEmp?.salary)}</span>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="date" className="text-right">Admissão</Label>
-              <Input id="date" type="date" className="col-span-3" value={formData.admission_date} onChange={e => setFormData({...formData, admission_date: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="status" className="text-right">Status</Label>
-              <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v as 'ativo'|'inativo'})}>
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ativo">Ativo</SelectItem>
-                  <SelectItem value="inativo">Demitido / Inativo</SelectItem>
-                </SelectContent>
-              </Select>
+
+            {/* Lista de histórico */}
+            {isSalaryLoading ? (
+              <p className="text-sm text-muted-foreground">Carregando histórico...</p>
+            ) : salaryHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum aumento registrado ainda.</p>
+            ) : (
+              <div className="rounded-md border divide-y">
+                {salaryHistory.map((h) => (
+                  <div key={h.id} className="flex justify-between items-start p-3 text-sm">
+                    <div>
+                      <p className="font-medium">{formatDate(h.effective_date)}</p>
+                      {h.notes && <p className="text-xs text-muted-foreground mt-0.5">{h.notes}</p>}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-muted-foreground line-through text-xs">
+                        {formatCurrency(h.old_salary)}
+                      </p>
+                      <p className="font-semibold text-emerald-600">{formatCurrency(h.new_salary)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Formulário novo aumento */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <h4 className="text-sm font-semibold">Registrar Novo Salário</h4>
+              <div className="grid gap-3">
+                <div>
+                  <Label className="text-xs">Data Efetiva *</Label>
+                  <Input
+                    type="date"
+                    value={salaryForm.effective_date}
+                    onChange={(e) => setSalaryForm({ ...salaryForm, effective_date: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Novo Salário (R$) *</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0,00"
+                    value={salaryForm.new_salary}
+                    onChange={(e) => setSalaryForm({ ...salaryForm, new_salary: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Observações</Label>
+                  <Input
+                    placeholder="Ex: Aumento por mérito"
+                    value={salaryForm.notes}
+                    onChange={(e) => setSalaryForm({ ...salaryForm, notes: e.target.value })}
+                  />
+                </div>
+              </div>
+              <Button onClick={handleAddSalary} size="sm" className="w-full">
+                Registrar Aumento
+              </Button>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>Salvar</Button>
+            <Button variant="outline" onClick={() => setIsSalaryDialogOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Checklist Dialog ── */}
+      <Dialog open={isChecklistOpen} onOpenChange={setIsChecklistOpen}>
+        <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Checklist de Documentos — {checklistEmp?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            {checklistEmp && getChecklistItems(checklistEmp).map((item) => (
+              <label
+                key={item}
+                className="flex items-start gap-3 p-2 rounded-md hover:bg-muted cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 mt-0.5 rounded"
+                  checked={!!checklistChecked[item]}
+                  onChange={(e) =>
+                    setChecklistChecked({ ...checklistChecked, [item]: e.target.checked })
+                  }
+                />
+                <span className={`text-sm ${checklistChecked[item] ? "line-through text-muted-foreground" : ""}`}>
+                  {item}
+                </span>
+              </label>
+            ))}
+
+            {checklistEmp?.salary_family && (
+              <p className="text-xs text-yellow-600 bg-yellow-50 p-2 rounded-md mt-2">
+                ⚠️ Este funcionário recebe Salário Família. Certidões de nascimento dos filhos até 14 anos são obrigatórias.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={copyChecklist}
+              className="gap-2"
+            >
+              {copySuccess ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+              {copySuccess ? "Copiado!" : "Copiar Lista"}
+            </Button>
+            <Button variant="outline" onClick={() => setIsChecklistOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Email Generator Dialog ── */}
+      <Dialog open={isEmailOpen} onOpenChange={setIsEmailOpen}>
+        <DialogContent className="sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {emailType === "admissao" ? "E-mail de Admissão" : "E-mail de Demissão"} — {emailEmp?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            {emailEmp && (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={emailType === "admissao" ? "default" : "outline"}
+                  onClick={() => {
+                    setEmailType("admissao");
+                    setEmailText(buildAdmissaoEmail(emailEmp));
+                  }}
+                >
+                  E-mail Admissão
+                </Button>
+                <Button
+                  size="sm"
+                  variant={emailType === "demissao" ? "default" : "outline"}
+                  onClick={() => {
+                    setEmailType("demissao");
+                    setEmailText(buildDemissaoEmail(emailEmp));
+                  }}
+                >
+                  E-mail Demissão
+                </Button>
+              </div>
+            )}
+            <textarea
+              className="w-full h-64 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+              value={emailText}
+              onChange={(e) => setEmailText(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Edite o template acima antes de copiar. Preencha os campos marcados com [CAMPO LIVRE].
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button onClick={copyEmail} className="gap-2">
+              {emailCopySuccess ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {emailCopySuccess ? "Copiado!" : "Copiar E-mail"}
+            </Button>
+            <Button variant="outline" onClick={() => setIsEmailOpen(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

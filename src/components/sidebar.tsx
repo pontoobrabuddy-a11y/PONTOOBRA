@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Users, HardHat, CheckSquare, BarChart3, Settings, LogOut } from "lucide-react";
+import { Users, HardHat, CheckSquare, BarChart3, Settings, LogOut, TrendingUp, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: BarChart3 },
-  { name: "Apontamento", href: "/apontamento", icon: CheckSquare },
-  { name: "Funcionários", href: "/funcionarios", icon: Users },
-  { name: "Relatórios", href: "/relatorios", icon: Settings },
+  { name: "Dashboard", href: "/", icon: BarChart3, adminOnly: false },
+  { name: "Controle de Diárias", href: "/apontamento", icon: CheckSquare, adminOnly: false },
+  { name: "RH & Financeiro", href: "/rh-financeiro", icon: TrendingUp, adminOnly: true },
+  { name: "Funcionários", href: "/funcionarios", icon: Users, adminOnly: true },
+  { name: "Pagamentos", href: "/pagamentos", icon: Wallet, adminOnly: true },
+  { name: "Relatórios", href: "/relatorios", icon: Settings, adminOnly: true },
 ];
 
 export function Sidebar() {
@@ -34,7 +36,7 @@ export function Sidebar() {
   if (pathname === '/login') return null;
 
   const filteredNavigation = navigation.filter(item => {
-    if (role === 'apontador' && (item.href === '/funcionarios' || item.href === '/relatorios')) {
+    if (role === 'apontador' && item.adminOnly) {
       return false;
     }
     return true;
@@ -73,7 +75,7 @@ export function Sidebar() {
                     )}
                   >
                     <item.icon className="h-4 w-4" />
-                    {item.name === "Apontamento" ? "Apontamento Diário" : item.name}
+                    {item.name}
                   </Link>
                 );
               })}
@@ -92,7 +94,7 @@ export function Sidebar() {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <div 
+      <div
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t flex items-center justify-around shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.1)]"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >

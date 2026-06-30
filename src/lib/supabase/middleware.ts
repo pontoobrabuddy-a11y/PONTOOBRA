@@ -54,7 +54,12 @@ export async function updateSession(request: NextRequest) {
 
     if (role === 'apontador') {
       const path = request.nextUrl.pathname
-      if (path.startsWith('/funcionarios') || path.startsWith('/relatorios')) {
+      if (
+        path.startsWith('/funcionarios') ||
+        path.startsWith('/relatorios') ||
+        path.startsWith('/rh-financeiro') ||
+        path.startsWith('/pagamentos')
+      ) {
         const url = request.nextUrl.clone()
         url.pathname = '/' // joga pro dashboard
         return NextResponse.redirect(url)

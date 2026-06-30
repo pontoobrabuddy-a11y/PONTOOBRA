@@ -604,14 +604,6 @@ Ianna - RH e Financeiro`;
                               <UserX className="h-4 w-4 text-orange-500" />
                             </Button>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(emp.id)}
-                            title="Apagar Registro"
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>

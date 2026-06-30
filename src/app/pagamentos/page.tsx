@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle, Clock, AlertCircle, Plus, Wallet } from "lucide-react";
+import { CheckCircle, Clock, AlertCircle, Plus, Wallet, Trash2 } from "lucide-react";
 
 // ─── Types locais (compatíveis com o que o useStore deve exportar) ────────────
 
@@ -162,16 +162,58 @@ function PagarDialog({ open, onClose, titulo, descricao, onConfirm }: PagarDialo
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function PagamentosPage() {
-  const { employees: rawEmployees } = useStore();
+  const { 
+    employees: rawEmployees,
+    payments: storePayments,
+    taxes: storeTaxes,
+    addPayment,
+    updatePayment,
+    deletePayment,
+    addTax,
+    updateTax,
+    deleteTax
+  } = useStore();
   const employees = rawEmployees as Employee[];
 
   const hoje = new Date();
   const [mesSelecionado, setMesSelecionado] = useState(hoje.getMonth() + 1);
   const [anoSelecionado, setAnoSelecionado] = useState(hoje.getFullYear());
 
-  // ── Estado local de pagamentos (mock + persistência local) ─────────────────
-  const [pagamentos, setPagamentos] = useState<Payment[]>([]);
-  const [impostos, setImpostos] = useState<Tax[]>([]);
+  // ── Estado de pagamentos (conectado ao Supabase) ───────────────────────────
+  const pagamentos = useMemo<Payment[]>(() => {
+    return storePayments.map(sp => ({
+      id: sp.id,
+      employee_id: sp.employee_id,
+      month: sp.period_month,
+      year: sp.period_year,
+      type: sp.payment_type === "quinzena1" ? "casana_q1" : sp.payment_type === "quinzena2" ? "casana_q2" : "buddy_mensal",
+      valor_base: sp.net_amount,
+      status: sp.paid ? "pago" : "pendente",
+      paid_at: sp.paid_at ? sp.paid_at.split("T")[0] : undefined,
+      comprovante_url: sp.receipt_url,
+    }));
+  }, [storePayments]);
+
+  const impostos = useMemo<Tax[]>(() => {
+    return storeTaxes.map(st => {
+      const isPaid = !!st.paid_at;
+      const today = new Date().toISOString().split("T")[0];
+      const isVencido = !isPaid && st.due_date < today;
+      const status = isPaid ? "pago" : isVencido ? "vencido" : "a_vencer";
+      
+      return {
+        id: st.id,
+        name: st.name,
+        empresa: st.company === "BUDDY" ? "BUDDY" : "CASANA",
+        valor: st.amount,
+        vencimento: st.due_date,
+        paid_at: st.paid_at ? st.paid_at.split("T")[0] : undefined,
+        competence_mes: st.competence_month,
+        competence_ano: st.competence_year,
+        status,
+      };
+    });
+  }, [storeTaxes]);
 
   // ── Liquidez contabilidade por employee (Q2) ───────────────────────────────
   const [liquidoContab, setLiquidoContab] = useState<Record<string, string>>({});
@@ -227,37 +269,40 @@ export default function PagamentosPage() {
     );
   }
 
-  function marcarComoPago(
+  async function marcarComoPago(
     employeeId: string,
     type: Payment["type"],
     valorBase: number,
     dataPagamento: string,
     extra?: Partial<Payment>
   ) {
-    setPagamentos((prev) => {
-      const existing = prev.find(
-        (p) =>
-          p.employee_id === employeeId &&
-          p.type === type &&
-          p.month === mesSelecionado &&
-          p.year === anoSelecionado
-      );
-      const updated: Payment = {
-        id: existing?.id || `${employeeId}_${type}_${mesSelecionado}_${anoSelecionado}`,
-        employee_id: employeeId,
-        month: mesSelecionado,
-        year: anoSelecionado,
-        type,
-        valor_base: valorBase,
-        status: "pago",
+    const mappedType = type === "casana_q1" ? "quinzena1" : type === "casana_q2" ? "quinzena2" : "mensal";
+    const existing = storePayments.find(
+      (sp) =>
+        sp.employee_id === employeeId &&
+        sp.payment_type === mappedType &&
+        sp.period_month === mesSelecionado &&
+        sp.period_year === anoSelecionado
+    );
+    
+    if (existing) {
+      await updatePayment(existing.id, {
+        paid: true,
         paid_at: dataPagamento,
-        ...extra,
-      };
-      if (existing) {
-        return prev.map((p) => (p.id === existing.id ? updated : p));
-      }
-      return [...prev, updated];
-    });
+        net_amount: valorBase,
+      });
+    } else {
+      await addPayment({
+        employee_id: employeeId,
+        period_month: mesSelecionado,
+        period_year: anoSelecionado,
+        payment_type: mappedType,
+        gross_amount: valorBase,
+        net_amount: valorBase,
+        paid: true,
+        paid_at: dataPagamento,
+      });
+    }
   }
 
   function abrirDialog(config: typeof dialogConfig) {
@@ -293,21 +338,18 @@ export default function PagamentosPage() {
   );
 
   // ── Adicionar Imposto ──────────────────────────────────────────────────────
-  function adicionarImposto() {
+  async function adicionarImposto() {
     const valor = parseFloat(novoImposto.valor.replace(",", ".")) || 0;
     if (!novoImposto.name || !valor || !novoImposto.vencimento) return;
 
-    const tax: Tax = {
-      id: crypto.randomUUID(),
+    await addTax({
       name: novoImposto.name,
-      empresa: novoImposto.empresa,
-      valor,
-      vencimento: novoImposto.vencimento,
-      competencia_mes: novoImposto.competencia_mes,
-      competencia_ano: novoImposto.competencia_ano,
-      status: "a_vencer",
-    };
-    setImpostos((prev) => [...prev, tax]);
+      company: novoImposto.empresa === "AMBAS" ? "BUDDY" : novoImposto.empresa,
+      amount: valor,
+      due_date: novoImposto.vencimento,
+      competence_month: mesSelecionado,
+      competence_year: anoSelecionado,
+    });
     setNovoImpostoOpen(false);
     setNovoImposto({
       name: "",
@@ -319,12 +361,10 @@ export default function PagamentosPage() {
     });
   }
 
-  function marcarImpostoPago(taxId: string, dataPagamento: string) {
-    setImpostos((prev) =>
-      prev.map((t) =>
-        t.id === taxId ? { ...t, paid_at: dataPagamento, status: "pago" } : t
-      )
-    );
+  async function marcarImpostoPago(taxId: string, dataPagamento: string) {
+    await updateTax(taxId, {
+      paid_at: dataPagamento,
+    });
   }
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -513,9 +553,24 @@ export default function PagamentosPage() {
                                 </Button>
                               )}
                               {pago && (
-                                <span className="text-xs text-muted-foreground">
-                                  em {pag?.paid_at}
-                                </span>
+                                <div className="flex items-center gap-1.5 justify-end">
+                                  <span className="text-xs text-muted-foreground">
+                                    em {pag?.paid_at ? new Date(pag.paid_at + "T12:00:00Z").toLocaleDateString("pt-BR") : ""}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                    title="Excluir Pagamento (Estornar)"
+                                    onClick={async () => {
+                                      if (confirm(`Deseja estornar (excluir) o pagamento de ${emp.name}?`)) {
+                                        if (pag?.id) await deletePayment(pag.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -635,9 +690,24 @@ export default function PagamentosPage() {
                                 </Button>
                               )}
                               {pago && (
-                                <span className="text-xs text-muted-foreground">
-                                  em {pag?.paid_at}
-                                </span>
+                                <div className="flex items-center gap-1.5 justify-end">
+                                  <span className="text-xs text-muted-foreground">
+                                    em {pag?.paid_at ? new Date(pag.paid_at + "T12:00:00Z").toLocaleDateString("pt-BR") : ""}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                    title="Excluir Pagamento (Estornar)"
+                                    onClick={async () => {
+                                      if (confirm(`Deseja estornar (excluir) o pagamento de ${emp.name}?`)) {
+                                        if (pag?.id) await deletePayment(pag.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -796,9 +866,24 @@ export default function PagamentosPage() {
                             </Button>
                           )}
                           {pago && (
-                            <span className="text-xs text-muted-foreground">
-                              em {pag?.paid_at}
-                            </span>
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <span className="text-xs text-muted-foreground">
+                                em {pag?.paid_at ? new Date(pag.paid_at + "T12:00:00Z").toLocaleDateString("pt-BR") : ""}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                title="Excluir Pagamento (Estornar)"
+                                onClick={async () => {
+                                  if (confirm(`Deseja estornar (excluir) o pagamento de ${emp.name}?`)) {
+                                    if (pag?.id) await deletePayment(pag.id);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -972,6 +1057,19 @@ export default function PagamentosPage() {
                               Marcar Pago
                             </Button>
                           )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 ml-2 inline-flex items-center justify-center"
+                            title="Excluir Imposto"
+                            onClick={async () => {
+                              if (confirm(`Deseja excluir o imposto "${tax.name}"?`)) {
+                                await deleteTax(tax.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
                         </td>
                       </tr>
                     );

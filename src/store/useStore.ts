@@ -90,6 +90,7 @@ interface AppState {
   fetchPayments: () => Promise<void>;
   addPayment: (p: Omit<Payment, 'id' | 'created_at'>) => Promise<void>;
   updatePayment: (id: string, data: Partial<Payment>) => Promise<void>;
+  deletePayment: (id: string) => Promise<void>;
 
   fetchTaxes: () => Promise<void>;
   addTax: (t: Omit<Tax, 'id' | 'created_at'>) => Promise<void>;
@@ -236,6 +237,17 @@ export const useStore = create<AppState>()((set, get) => ({
     }
     set((state) => ({
       payments: state.payments.map(p => p.id === id ? { ...p, ...data } : p)
+    }));
+  },
+
+  deletePayment: async (id) => {
+    const { error } = await supabase.from('payments').delete().eq('id', id);
+    if (error) {
+      console.error("Error deleting payment:", error);
+      return;
+    }
+    set((state) => ({
+      payments: state.payments.filter(p => p.id !== id)
     }));
   },
 

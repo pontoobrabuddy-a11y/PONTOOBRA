@@ -261,7 +261,7 @@ export default function RelatoriosPage() {
               </div>
             </div>
             <div className="w-full md:w-[200px]">
-              <Select value={teamFilter} onValueChange={setTeamFilter}>
+              <Select value={teamFilter} onValueChange={(v) => setTeamFilter(v || '')}>
                 <SelectTrigger>
                   <SelectValue placeholder="Equipe" />
                 </SelectTrigger>

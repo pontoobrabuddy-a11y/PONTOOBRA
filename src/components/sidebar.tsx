@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Users, HardHat, CheckSquare, BarChart3, Settings, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -16,8 +17,28 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [role, setRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchRole = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (data) setRole(data.role);
+      }
+    };
+    fetchRole();
+  }, []);
 
   if (pathname === '/login') return null;
+
+  const filteredNavigation = navigation.filter(item => {
+    if (role === 'apontador' && (item.href === '/funcionarios' || item.href === '/relatorios')) {
+      return false;
+    }
+    return true;
+  });
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -38,7 +59,7 @@ export function Sidebar() {
           </div>
           <div className="flex-1">
             <nav className="grid items-start px-2 text-sm font-medium lg:px-4 gap-1 mt-4">
-              {navigation.map((item) => {
+              {filteredNavigation.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <Link
@@ -75,7 +96,7 @@ export function Sidebar() {
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t flex items-center justify-around shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.1)]"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        {navigation.map((item) => {
+        {filteredNavigation.map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link

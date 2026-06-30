@@ -47,5 +47,20 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Verifica RBAC se estiver logado
+  if (user) {
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+    const role = profile?.role || 'apontador'
+
+    if (role === 'apontador') {
+      const path = request.nextUrl.pathname
+      if (path.startsWith('/funcionarios') || path.startsWith('/relatorios')) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/' // joga pro dashboard
+        return NextResponse.redirect(url)
+      }
+    }
+  }
+
   return supabaseResponse
 }

@@ -96,15 +96,17 @@ export default function EmailsPage() {
   // Helpers de formatação
   const formatDate = (dateStr: string | undefined): string => {
     if (!dateStr) return "—";
-    const parts = dateStr.split("-");
+    const onlyDate = dateStr.slice(0, 10);
+    const parts = onlyDate.split("-");
     if (parts.length < 3) return "—";
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
   };
 
   const formatDateLong = (dateStr: string | undefined): string => {
     if (!dateStr) return "—";
-    const parts = dateStr.split("-").map(Number);
-    if (parts.length < 3) return "—";
+    const onlyDate = dateStr.slice(0, 10);
+    const parts = onlyDate.split("-").map(Number);
+    if (parts.length < 3 || parts.some(isNaN)) return "—";
     const [y, m, d] = parts;
     const meses = [
       "janeiro",

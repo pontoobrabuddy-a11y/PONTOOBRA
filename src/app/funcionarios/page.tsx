@@ -1081,26 +1081,26 @@ Ianna - RH e Financeiro`;
 
       {/* ── Checklist Dialog ── */}
       <Dialog open={isChecklistOpen} onOpenChange={setIsChecklistOpen}>
-        <DialogContent className="sm:max-w-4xl p-5">
-          <DialogHeader className="pb-1">
-            <DialogTitle className="text-lg font-bold">
+        <DialogContent className="sm:max-w-4xl p-6">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-xl font-bold">
               Documentação — {checklistEmp?.name}
             </DialogTitle>
           </DialogHeader>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-3">
             {/* Coluna Esquerda: Checklist */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-bold tracking-wider uppercase text-blue-600 dark:text-blue-500">
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold tracking-wider uppercase text-blue-600 dark:text-blue-500">
                 Checklist de documentos para admissão
               </h3>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-2">
                 {checklistEmp && DOCS_ADMISSAO.filter(d => d.k !== "filhos" || (checklistEmp.role || "").toLowerCase().includes("ajudante") || !!checklistEmp.salary_family).map((doc) => {
                   const isChecked = !!checklistChecked[doc.k];
                   return (
                     <label
                       key={doc.k}
-                      className={`flex items-start gap-2.5 py-1.5 px-2.5 border rounded-lg cursor-pointer transition-colors ${
+                      className={`flex items-start gap-3 py-2 px-3 border rounded-lg cursor-pointer transition-colors ${
                         isChecked 
                           ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/40 text-emerald-900 dark:text-emerald-300" 
                           : "bg-slate-50 dark:bg-slate-900/45 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-300 hover:border-slate-350 dark:hover:border-slate-700"
@@ -1108,46 +1108,44 @@ Ianna - RH e Financeiro`;
                     >
                       <input
                         type="checkbox"
-                        className="h-3.5 w-3.5 mt-0.5 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-emerald-600 focus:ring-emerald-500 focus:ring-offset-slate-900"
+                        className="h-4 w-4 mt-0.5 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-emerald-600 focus:ring-emerald-500 focus:ring-offset-slate-900"
                         checked={isChecked}
                         onChange={(e) => toggleDoc(doc.k, e.target.checked)}
                       />
                       <div className="flex flex-col">
-                        <span className="text-xs font-semibold tracking-wide">{doc.t}</span>
-                        {doc.obs && <span className="text-[10px] opacity-75 mt-0.5 leading-none">{doc.obs}</span>}
+                        <span className="text-sm font-semibold tracking-wide">{doc.t}</span>
+                        {doc.obs && <span className="text-[11px] opacity-75 mt-0.5 leading-snug">{doc.obs}</span>}
                       </div>
                     </label>
                   );
                 })}
               </div>
               
-              <div className="flex gap-2 pt-1">
+              <div className="flex gap-2 pt-2">
                 <Button 
                   onClick={generateWhatsappMessage} 
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 text-white flex-1 font-semibold text-xs"
+                  className="bg-blue-600 hover:bg-blue-700 text-white flex-1 font-semibold"
                 >
-                  <Mail className="h-3.5 w-3.5 mr-1.5" />
+                  <Mail className="h-4 w-4 mr-2" />
                   {copySuccess ? "Copiado!" : "Gerar MSG WhatsApp"}
                 </Button>
                 <Button 
                   variant="outline" 
                   onClick={printChecklist}
-                  size="sm"
-                  className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold text-xs"
+                  className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold"
                 >
-                  <Printer className="h-3.5 w-3.5 mr-1.5" />
+                  <Printer className="h-4 w-4 mr-2" />
                   Imprimir / PDF
                 </Button>
               </div>
             </div>
             
             {/* Coluna Direita: Fluxo */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-bold tracking-wider uppercase text-blue-600 dark:text-blue-500">
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold tracking-wider uppercase text-blue-600 dark:text-blue-500">
                 Fluxo de Admissão (RH)
               </h3>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {[
                   "Captação de funcionários pelo Mestre de Obras.",
                   "Leitura e assinatura do Regimento Interno da empresa pelo funcionário na própria obra.",
@@ -1159,19 +1157,19 @@ Ianna - RH e Financeiro`;
                   "Coleta de assinaturas do funcionário e do empregador, digitalização e arquivamento dos documentos assinados no Drive.",
                   "Envio de retorno à contabilidade respondendo ao mesmo e-mail com as cópias assinadas. Funcionário admitido com sucesso!"
                 ].map((step, idx) => (
-                  <div key={idx} className="flex gap-2.5 items-start border-b border-dashed border-slate-150 dark:border-slate-800 pb-2 last:border-0">
-                    <span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-600 dark:bg-blue-700 text-white text-[10px] font-bold shrink-0 mt-0.5">
+                  <div key={idx} className="flex gap-3 items-start border-b border-dashed border-slate-150 dark:border-slate-800 pb-2.5 last:border-0">
+                    <span className="flex items-center justify-center h-5.5 w-5.5 rounded-full bg-blue-600 dark:bg-blue-700 text-white text-xs font-bold shrink-0 mt-0.5">
                       {idx + 1}
                     </span>
-                    <p className="text-xs text-slate-700 dark:text-slate-350 leading-snug font-medium">{step}</p>
+                    <p className="text-[13px] text-slate-700 dark:text-slate-350 leading-relaxed font-medium">{step}</p>
                   </div>
                 ))}
               </div>
             </div>
           </div>
           
-          <DialogFooter className="pt-1">
-            <Button variant="outline" size="sm" onClick={() => setIsChecklistOpen(false)} className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold text-xs">
+          <DialogFooter className="pt-2">
+            <Button variant="outline" onClick={() => setIsChecklistOpen(false)} className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold">
               Fechar
             </Button>
           </DialogFooter>

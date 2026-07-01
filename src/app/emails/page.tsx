@@ -570,8 +570,10 @@ ${config.signatario}`;
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Funcionário</Label>
             <Select key={activeEmployees.length} value={selectedEmpId} onValueChange={(v) => setSelectedEmpId(v || "")}>
-              <SelectTrigger className="w-full border-slate-200 dark:border-slate-800 bg-transparent">
-                <SelectValue placeholder="Selecione o funcionário" />
+              <SelectTrigger className="w-full border-slate-200 dark:border-slate-800 bg-transparent flex justify-between items-center text-slate-800 dark:text-slate-200">
+                <span>
+                  {selectedEmp ? `${selectedEmp.name} ${selectedEmp.pagador ? `(${selectedEmp.pagador})` : ""}` : "Selecione o funcionário"}
+                </span>
               </SelectTrigger>
               <SelectContent>
                 {activeEmployees.map((e) => (
@@ -586,8 +588,10 @@ ${config.signatario}`;
           <div className="space-y-1.5 md:col-span-2">
             <Label className="text-xs text-muted-foreground">Tipo de E-mail</Label>
             <Select value={emailType} onValueChange={(v) => setEmailType(v || "admissao")}>
-              <SelectTrigger className="w-full border-slate-200 dark:border-slate-800 bg-transparent">
-                <SelectValue placeholder="Selecione o tipo" />
+              <SelectTrigger className="w-full border-slate-200 dark:border-slate-800 bg-transparent flex justify-between items-center text-slate-800 dark:text-slate-200">
+                <span>
+                  {EMAIL_TYPES.find((t) => t.k === emailType)?.t || "Selecione o tipo"}
+                </span>
               </SelectTrigger>
               <SelectContent>
                 {EMAIL_TYPES.map((t) => (

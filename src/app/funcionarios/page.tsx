@@ -36,13 +36,13 @@ function subtractDays(dateStr: string, days: number): string {
 }
 
 function calcLastWorkDate(emp: Employee): string {
-  if (emp.dismissal_type === "aviso_empresa" && emp.notice_end_date) {
+  if (emp.dismissal_type === "empresa_com" && emp.notice_end_date) {
     return subtractDays(emp.notice_end_date, 7);
   }
-  if (emp.dismissal_type === "aviso_funcionario" && emp.notice_start_date) {
+  if (emp.dismissal_type === "pedido_com" && emp.notice_start_date) {
     return addDays(emp.notice_start_date, 30);
   }
-  if (emp.dismissal_type === "sem_aviso" && emp.dismissal_date) {
+  if ((emp.dismissal_type === "pedido_sem" || emp.dismissal_type === "empresa_sem") && emp.dismissal_date) {
     return emp.dismissal_date;
   }
   return "";
@@ -234,7 +234,7 @@ export default function FuncionariosPage() {
       phone: emp.phone || "",
       role: emp.role || "",
       team: emp.team || "",
-      admission_date: emp.admission_date || "",
+      admission_date: emp.admission_date ? emp.admission_date.slice(0, 10) : "",
       employment_type: emp.employment_type || "",
       pagador: emp.pagador || "",
       salary: emp.salary !== undefined ? String(emp.salary) : "",
@@ -473,11 +473,13 @@ CNPJ: ${pagadorInfo ? pagadorInfo.cnpj : ""}`;
   function buildDemissaoEmail(emp: Employee): string {
     const lastWork = calcLastWorkDate(emp);
     const situacaoMap: Record<string, string> = {
-      aviso_empresa: "Demissão pela empresa com aviso",
-      sem_aviso: "Demissão pela empresa sem aviso",
-      aviso_funcionario: "Pedido de Demissão",
+      pedido_com: "Pedido de demissão — com aviso",
+      pedido_sem: "Pedido de demissão — sem aviso",
+      empresa_com: "Demissão pela empresa — com aviso",
+      empresa_sem: "Demissão pela empresa — sem aviso (indenizado)",
     };
-    return `Assunto: Solicitação de ${emp.dismissal_type === "aviso_empresa" || emp.dismissal_type === "aviso_funcionario" ? "Aviso Prévio" : "Demissão"} - ${emp.name}
+    const isNotice = emp.dismissal_type === "pedido_com" || emp.dismissal_type === "empresa_com";
+    return `Assunto: Solicitação de ${isNotice ? "Aviso Prévio" : "Demissão"} - ${emp.name}
 
 Prezados,
 
@@ -776,6 +778,7 @@ Ianna - RH e Financeiro`;
                     className="col-span-3"
                     value={formData.admission_date}
                     onChange={(e) => setFormData({ ...formData, admission_date: e.target.value })}
+                    disabled={!!editingId}
                   />
                 </div>
               </div>
@@ -910,36 +913,46 @@ Ianna - RH e Financeiro`;
                       value={formData.dismissal_type}
                       onValueChange={(v) => setFormData({ ...formData, dismissal_type: v || "" })}
                     >
-                      <SelectTrigger className="col-span-3">
-                        <SelectValue placeholder="Tipo de demissão" />
+                      <SelectTrigger className="col-span-3 flex justify-between items-center text-left">
+                        <span>
+                          {formData.dismissal_type === "pedido_com" && "Pedido de demissão — com aviso"}
+                          {formData.dismissal_type === "pedido_sem" && "Pedido de demissão — sem aviso"}
+                          {formData.dismissal_type === "empresa_com" && "Demissão pela empresa — com aviso"}
+                          {formData.dismissal_type === "empresa_sem" && "Demissão pela empresa — sem aviso (indenizado)"}
+                          {!formData.dismissal_type && "Tipo de demissão"}
+                        </span>
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="aviso_empresa">Demissão Empresa com Aviso</SelectItem>
-                        <SelectItem value="sem_aviso">Demissão Empresa sem Aviso</SelectItem>
-                        <SelectItem value="aviso_funcionario">Pedido de Demissão</SelectItem>
+                      <SelectContent className="w-fit max-w-lg">
+                        <SelectItem value="pedido_com">Pedido de demissão — com aviso</SelectItem>
+                        <SelectItem value="pedido_sem">Pedido de demissão — sem aviso</SelectItem>
+                        <SelectItem value="empresa_com">Demissão pela empresa — com aviso</SelectItem>
+                        <SelectItem value="empresa_sem">Demissão pela empresa — sem aviso (indenizado)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  {/* Data início aviso */}
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label className="text-right text-sm">Início Aviso</Label>
-                    <Input
-                      type="date"
-                      className="col-span-3"
-                      value={formData.notice_start_date}
-                      onChange={(e) => setFormData({ ...formData, notice_start_date: e.target.value })}
-                    />
-                  </div>
-                  {/* Data fim aviso (contabilidade) */}
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label className="text-right text-sm">Fim Aviso</Label>
-                    <Input
-                      type="date"
-                      className="col-span-3"
-                      value={formData.notice_end_date}
-                      onChange={(e) => setFormData({ ...formData, notice_end_date: e.target.value })}
-                    />
-                  </div>
+                  {/* Data início e fim aviso (se com aviso) */}
+                  {(formData.dismissal_type === "pedido_com" || formData.dismissal_type === "empresa_com") && (
+                    <>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right text-sm">Início Aviso</Label>
+                        <Input
+                          type="date"
+                          className="col-span-3"
+                          value={formData.notice_start_date}
+                          onChange={(e) => setFormData({ ...formData, notice_start_date: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right text-sm">Fim Aviso</Label>
+                        <Input
+                          type="date"
+                          className="col-span-3"
+                          value={formData.notice_end_date}
+                          onChange={(e) => setFormData({ ...formData, notice_end_date: e.target.value })}
+                        />
+                      </div>
+                    </>
+                  )}
                   {/* Último Dia de Trabalho (calculado) */}
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label className="text-right text-sm text-muted-foreground">Últ. Dia Trab.</Label>
@@ -950,14 +963,14 @@ Ianna - RH e Financeiro`;
                         className="bg-muted cursor-not-allowed text-muted-foreground"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        {formData.dismissal_type === "aviso_empresa" && "Fim do aviso − 7 dias corridos"}
-                        {formData.dismissal_type === "aviso_funcionario" && "Início do aviso + 30 dias corridos"}
-                        {formData.dismissal_type === "sem_aviso" && "Igual à data de demissão direta"}
+                        {formData.dismissal_type === "empresa_com" && "Fim do aviso − 7 dias corridos"}
+                        {formData.dismissal_type === "pedido_com" && "Início do aviso + 30 dias corridos"}
+                        {(formData.dismissal_type === "pedido_sem" || formData.dismissal_type === "empresa_sem") && "Igual à data de demissão direta"}
                       </p>
                     </div>
                   </div>
                   {/* Data de demissão direta (sem aviso) */}
-                  {formData.dismissal_type === "sem_aviso" && (
+                  {(formData.dismissal_type === "pedido_sem" || formData.dismissal_type === "empresa_sem") && (
                     <div className="grid grid-cols-4 items-center gap-4">
                       <Label className="text-right text-sm">Data Demissão</Label>
                       <Input

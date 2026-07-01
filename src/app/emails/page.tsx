@@ -135,19 +135,19 @@ export default function EmailsPage() {
 
   const calcLastWorkDate = (emp: Employee): string => {
     // Caso seja demissão empresa com aviso
-    if (emp.dismissal_type === "aviso_empresa" && emp.notice_end_date) {
+    if (emp.dismissal_type === "empresa_com" && emp.notice_end_date) {
       const d = new Date(emp.notice_end_date + "T12:00:00Z");
       d.setDate(d.getDate() - 7);
       return d.toISOString().split("T")[0];
     }
     // Caso seja aviso funcionario (pedido com aviso)
-    if (emp.dismissal_type === "aviso_funcionario" && emp.notice_start_date) {
+    if (emp.dismissal_type === "pedido_com" && emp.notice_start_date) {
       const d = new Date(emp.notice_start_date + "T12:00:00Z");
       d.setDate(d.getDate() + 30);
       return d.toISOString().split("T")[0];
     }
     // Demissão sem aviso
-    if (emp.dismissal_date) {
+    if ((emp.dismissal_type === "pedido_sem" || emp.dismissal_type === "empresa_sem") && emp.dismissal_date) {
       return emp.dismissal_date;
     }
     return "";

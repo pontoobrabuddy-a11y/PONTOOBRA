@@ -24,7 +24,7 @@ export interface Employee {
   notice_start_date?: string;
   notice_end_date?: string;
   last_work_date?: string;
-  dismissal_type?: 'sem_aviso' | 'aviso_empresa' | 'aviso_funcionario';
+  dismissal_type?: 'pedido_com' | 'pedido_sem' | 'empresa_com' | 'empresa_sem';
   salary_family?: boolean;
 }
 

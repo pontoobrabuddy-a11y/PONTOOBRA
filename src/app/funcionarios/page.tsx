@@ -1081,7 +1081,7 @@ Ianna - RH e Financeiro`;
 
       {/* ── Checklist Dialog ── */}
       <Dialog open={isChecklistOpen} onOpenChange={setIsChecklistOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
               Documentação — {checklistEmp?.name}
@@ -1091,7 +1091,7 @@ Ianna - RH e Financeiro`;
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-4">
             {/* Coluna Esquerda: Checklist */}
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold tracking-wider uppercase text-blue-500">
+              <h3 className="text-sm font-semibold tracking-wider uppercase text-blue-600 dark:text-blue-500">
                 Checklist de documentos para admissão
               </h3>
               <div className="flex flex-col gap-2">
@@ -1102,13 +1102,13 @@ Ianna - RH e Financeiro`;
                       key={doc.k}
                       className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
                         isChecked 
-                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" 
-                          : "bg-slate-900/40 border-slate-800 text-slate-300 hover:border-slate-700"
+                          ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/40 text-emerald-900 dark:text-emerald-300" 
+                          : "bg-slate-50 dark:bg-slate-900/45 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-300 hover:border-slate-350 dark:hover:border-slate-700"
                       }`}
                     >
                       <input
                         type="checkbox"
-                        className="h-4 w-4 mt-1 rounded border-slate-700 bg-slate-850 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900"
+                        className="h-4 w-4 mt-1 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-emerald-600 focus:ring-emerald-500 focus:ring-offset-slate-900"
                         checked={isChecked}
                         onChange={(e) => toggleDoc(doc.k, e.target.checked)}
                       />
@@ -1124,7 +1124,7 @@ Ianna - RH e Financeiro`;
               <div className="flex gap-2">
                 <Button 
                   onClick={generateWhatsappMessage} 
-                  className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
+                  className="bg-blue-600 hover:bg-blue-700 text-white flex-1 font-semibold"
                 >
                   <Mail className="h-4 w-4 mr-2" />
                   {copySuccess ? "Mensagem Copiada!" : "Gerar mensagem p/ funcionário"}
@@ -1132,7 +1132,7 @@ Ianna - RH e Financeiro`;
                 <Button 
                   variant="outline" 
                   onClick={printChecklist}
-                  className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                  className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold"
                 >
                   <Printer className="h-4 w-4 mr-2" />
                   Imprimir / PDF
@@ -1142,7 +1142,7 @@ Ianna - RH e Financeiro`;
             
             {/* Coluna Direita: Fluxo */}
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold tracking-wider uppercase text-blue-500">
+              <h3 className="text-sm font-semibold tracking-wider uppercase text-blue-600 dark:text-blue-500">
                 Fluxo de admissão (IANNA)
               </h3>
               <div className="space-y-3">
@@ -1156,11 +1156,11 @@ Ianna - RH e Financeiro`;
                   "Funcionário e Manuel assinam; IANNA escaneia e salva os assinados.",
                   "Responde o mesmo e-mail à contabilidade com os documentos assinados. Funcionário admitido."
                 ].map((step, idx) => (
-                  <div key={idx} className="flex gap-3 items-start border-b border-dashed border-slate-800 pb-3 last:border-0">
-                    <span className="flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-xs font-bold shrink-0 mt-0.5">
+                  <div key={idx} className="flex gap-3 items-start border-b border-dashed border-slate-150 dark:border-slate-800 pb-3 last:border-0">
+                    <span className="flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 dark:bg-blue-700 text-white text-xs font-bold shrink-0 mt-0.5">
                       {idx + 1}
                     </span>
-                    <p className="text-sm text-slate-300 leading-relaxed">{step}</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-350 leading-relaxed font-medium">{step}</p>
                   </div>
                 ))}
               </div>
@@ -1168,7 +1168,7 @@ Ianna - RH e Financeiro`;
           </div>
           
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsChecklistOpen(false)} className="border-slate-700 text-slate-300">
+            <Button variant="outline" onClick={() => setIsChecklistOpen(false)} className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold">
               Fechar
             </Button>
           </DialogFooter>

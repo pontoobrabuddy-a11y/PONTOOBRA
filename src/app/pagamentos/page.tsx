@@ -166,6 +166,7 @@ export default function PagamentosPage() {
     employees: rawEmployees,
     payments: storePayments,
     taxes: storeTaxes,
+    attendance,
     addPayment,
     updatePayment,
     deletePayment,
@@ -178,6 +179,26 @@ export default function PagamentosPage() {
   const hoje = new Date();
   const [mesSelecionado, setMesSelecionado] = useState(hoje.getMonth() + 1);
   const [anoSelecionado, setAnoSelecionado] = useState(hoje.getFullYear());
+
+  const getDaysWorked = (employeeId: string, month: number, year: number, startDay: number, endDay: number) => {
+    let days = 0;
+    const prefix = `${year}-${String(month).padStart(2, "0")}-`;
+    Object.keys(attendance || {}).forEach(date => {
+      if (date.startsWith(prefix)) {
+        const day = parseInt(date.split("-")[2], 10);
+        if (day >= startDay && day <= endDay) {
+          const record = attendance[date]?.[employeeId];
+          const status = typeof record === "object" ? record?.status : record;
+          if (status === "presence") {
+            days += 1;
+          } else if (status === "half_presence") {
+            days += 0.5;
+          }
+        }
+      }
+    });
+    return days;
+  };
 
   // ── Estado de pagamentos (conectado ao Supabase) ───────────────────────────
   const pagamentos = useMemo<Payment[]>(() => {
@@ -311,31 +332,38 @@ export default function PagamentosPage() {
   }
 
   // ── Totais ─────────────────────────────────────────────────────────────────
-  const totalQ1 = useMemo(
-    () =>
-      casanaEmployees.reduce((acc, e) => acc + (e.salary || 0) / 2, 0),
-    [casanaEmployees]
-  );
+  const totalQ1 = useMemo(() => {
+    return casanaEmployees.reduce((acc, e) => {
+      const isAvulso = e.employment_type === "Avulso";
+      const diasQ1 = getDaysWorked(e.id, mesSelecionado, anoSelecionado, 1, 15);
+      const valorQ1 = isAvulso ? (e.salary || 0) * diasQ1 : (e.salary || 0) / 2;
+      return acc + valorQ1;
+    }, 0);
+  }, [casanaEmployees, mesSelecionado, anoSelecionado, attendance]);
 
-  const totalQ2 = useMemo(
-    () =>
-      casanaEmployees.reduce((acc, e) => {
-        const q1Pago = getPagamento(e.id, "casana_q1");
-        const liquido = parseFloat(liquidoContab[e.id] || "0") || 0;
-        const q1Valor = (e.salary || 0) / 2;
-        return acc + Math.max(0, liquido - (q1Pago ? q1Valor : 0));
-      }, 0),
-    [casanaEmployees, liquidoContab, pagamentos, mesSelecionado, anoSelecionado]
-  );
+  const totalQ2 = useMemo(() => {
+    return casanaEmployees.reduce((acc, e) => {
+      const isAvulso = e.employment_type === "Avulso";
+      const diasQ2 = getDaysWorked(e.id, mesSelecionado, anoSelecionado, 16, 31);
+      if (isAvulso) {
+        return acc + (e.salary || 0) * diasQ2;
+      }
+      const q1Pago = getPagamento(e.id, "casana_q1");
+      const liquido = parseFloat((liquidoContab[e.id] || "").replace(",", ".")) || 0;
+      const q1Valor = (e.salary || 0) / 2;
+      return acc + Math.max(0, liquido - (q1Pago ? q1Valor : 0));
+    }, 0);
+  }, [casanaEmployees, liquidoContab, pagamentos, mesSelecionado, anoSelecionado, attendance]);
 
-  const totalBuddy = useMemo(
-    () =>
-      buddyEmployees.reduce((acc, e) => {
-        const desconto = parseFloat(descontoBuddy[e.id] || "0") || 0;
-        return acc + Math.max(0, (e.salary || 0) - desconto);
-      }, 0),
-    [buddyEmployees, descontoBuddy]
-  );
+  const totalBuddy = useMemo(() => {
+    return buddyEmployees.reduce((acc, e) => {
+      const isAvulso = e.employment_type === "Avulso";
+      const diasMes = getDaysWorked(e.id, mesSelecionado, anoSelecionado, 1, 31);
+      const gross = isAvulso ? (e.salary || 0) * diasMes : (e.salary || 0);
+      const desconto = parseFloat(descontoBuddy[e.id] || "0") || 0;
+      return acc + Math.max(0, gross - desconto);
+    }, 0);
+  }, [buddyEmployees, descontoBuddy, mesSelecionado, anoSelecionado, attendance]);
 
   // ── Adicionar Imposto ──────────────────────────────────────────────────────
   async function adicionarImposto() {
@@ -497,13 +525,15 @@ export default function PagamentosPage() {
                     </thead>
                     <tbody>
                       {casanaEmployees.map((emp, idx) => {
-                        const valorQ1 = (emp.salary || 0) / 2;
+                        const isAvulso = emp.employment_type === "Avulso";
+                        const diasQ1 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 1, 15);
+                        const valorQ1 = isAvulso ? (emp.salary || 0) * diasQ1 : (emp.salary || 0) / 2;
                         const pag = getPagamento(emp.id, "casana_q1");
                         const pago = pag?.status === "pago";
                         return (
                           <tr key={emp.id} className="border-t hover:bg-muted/30 transition-colors">
                             <td className="px-3 py-2 text-muted-foreground">
-                              {emp.employee_number || String(idx + 1).padStart(3, "0")}
+                              {isAvulso ? "—" : (emp.employee_number || String(idx + 1).padStart(3, "0"))}
                             </td>
                             <td className="px-3 py-2 font-medium">{emp.name}</td>
                             <td className="px-3 py-2 hidden md:table-cell">
@@ -518,7 +548,12 @@ export default function PagamentosPage() {
                               {emp.pix_type || "—"}
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-blue-700 dark:text-blue-300">
-                              {formatMoney(valorQ1)}
+                              <div>{formatMoney(valorQ1)}</div>
+                              {isAvulso && (
+                                <div className="text-xs text-muted-foreground font-normal">
+                                  {diasQ1} {diasQ1 === 1 ? "diária" : "diárias"}
+                                </div>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-center">
                               {pago ? (
@@ -617,42 +652,58 @@ export default function PagamentosPage() {
                     </thead>
                     <tbody>
                       {casanaEmployees.map((emp, idx) => {
-                        const q1Valor = (emp.salary || 0) / 2;
+                        const isAvulso = emp.employment_type === "Avulso";
+                        const diasQ1 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 1, 15);
+                        const diasQ2 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 16, 31);
+
+                        const q1Valor = isAvulso ? (emp.salary || 0) * diasQ1 : (emp.salary || 0) / 2;
                         const q1Pag = getPagamento(emp.id, "casana_q1");
                         const q1Pago = q1Pag?.status === "pago";
                         const liquidoStr = liquidoContab[emp.id] || "";
                         const liquido = parseFloat(liquidoStr.replace(",", ".")) || 0;
-                        const valorQ2 = liquido > 0 ? Math.max(0, liquido - (q1Pago ? q1Valor : 0)) : 0;
+                        const valorQ2 = isAvulso 
+                          ? (emp.salary || 0) * diasQ2
+                          : (liquido > 0 ? Math.max(0, liquido - (q1Pago ? q1Valor : 0)) : 0);
                         const pag = getPagamento(emp.id, "casana_q2");
                         const pago = pag?.status === "pago";
 
                         return (
                           <tr key={emp.id} className="border-t hover:bg-muted/30 transition-colors">
                             <td className="px-3 py-2 text-muted-foreground">
-                              {emp.employee_number || String(idx + 1).padStart(3, "0")}
+                              {isAvulso ? "—" : (emp.employee_number || String(idx + 1).padStart(3, "0"))}
                             </td>
                             <td className="px-3 py-2 font-medium">{emp.name}</td>
                             <td className="px-3 py-2 text-right text-muted-foreground">
                               {q1Pago ? formatMoney(q1Valor) : <span className="text-amber-500 text-xs">Não paga</span>}
                             </td>
                             <td className="px-3 py-2 text-center">
-                              <Input
-                                type="text"
-                                placeholder="Aguardando folha"
-                                value={liquidoStr}
-                                onChange={(e) =>
-                                  setLiquidoContab((prev) => ({
-                                    ...prev,
-                                    [emp.id]: e.target.value,
-                                  }))
-                                }
-                                className="w-32 text-right mx-auto"
-                                disabled={pago}
-                              />
+                              {isAvulso ? (
+                                <Badge variant="outline" className="bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200">
+                                  Avulso ({diasQ2} {diasQ2 === 1 ? "dia" : "dias"})
+                                </Badge>
+                              ) : (
+                                <Input
+                                  type="text"
+                                  placeholder="Aguardando folha"
+                                  value={liquidoStr}
+                                  onChange={(e) =>
+                                    setLiquidoContab((prev) => ({
+                                      ...prev,
+                                      [emp.id]: e.target.value,
+                                    }))
+                                  }
+                                  className="w-32 text-right mx-auto"
+                                  disabled={pago}
+                                />
+                              )}
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-blue-700 dark:text-blue-300">
-                              {liquido > 0 ? formatMoney(valorQ2) : (
-                                <span className="text-xs text-muted-foreground italic">Aguardando folha</span>
+                              {isAvulso ? (
+                                <div>{formatMoney(valorQ2)}</div>
+                              ) : (
+                                liquido > 0 ? formatMoney(valorQ2) : (
+                                  <span className="text-xs text-muted-foreground italic">Aguardando folha</span>
+                                )
                               )}
                             </td>
                             <td className="px-3 py-2 text-center">
@@ -669,7 +720,7 @@ export default function PagamentosPage() {
                               )}
                             </td>
                             <td className="px-3 py-2">
-                              {!pago && liquido > 0 && (
+                              {!pago && (isAvulso ? valorQ2 > 0 : liquido > 0) && (
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -680,7 +731,7 @@ export default function PagamentosPage() {
                                       descricao: `Marcar ${emp.name} como pago: ${formatMoney(valorQ2)}`,
                                       onConfirm: (data) =>
                                         marcarComoPago(emp.id, "casana_q2", valorQ2, data, {
-                                          valor_contabilidade: liquido,
+                                          valor_contabilidade: isAvulso ? undefined : liquido,
                                         }),
                                     })
                                   }
@@ -786,33 +837,43 @@ export default function PagamentosPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {buddyEmployees.map((emp, idx) => {
-                    const desconto = parseFloat(descontoBuddy[emp.id] || "0") || 0;
-                    const valorFinal = Math.max(0, (emp.salary || 0) - desconto);
-                    const pag = getPagamento(emp.id, "buddy_mensal");
-                    const pago = pag?.status === "pago";
-                    // PJ recebe da CASANA empresa
-                    const empresaPagante = emp.employment_type === "PJ"
-                      ? `${CASANA_EMPRESA} (${CASANA_CNPJ})`
-                      : `${BUDDY_EMPRESA} (${BUDDY_CNPJ})`;
+                   {buddyEmployees.map((emp, idx) => {
+                     const isAvulso = emp.employment_type === "Avulso";
+                     const diasMes = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 1, 31);
+                     const gross = isAvulso ? (emp.salary || 0) * diasMes : (emp.salary || 0);
+                     const desconto = parseFloat(descontoBuddy[emp.id] || "0") || 0;
+                     const valorFinal = Math.max(0, gross - desconto);
+                     const pag = getPagamento(emp.id, "buddy_mensal");
+                     const pago = pag?.status === "pago";
+                     // PJ recebe da CASANA empresa
+                     const empresaPagante = emp.employment_type === "PJ"
+                       ? `${CASANA_EMPRESA} (${CASANA_CNPJ})`
+                       : `${BUDDY_EMPRESA} (${BUDDY_CNPJ})`;
 
-                    return (
-                      <tr key={emp.id} className="border-t hover:bg-muted/30 transition-colors">
-                        <td className="px-3 py-2 text-muted-foreground">
-                          {emp.employee_number || String(idx + 1).padStart(3, "0")}
-                        </td>
-                        <td className="px-3 py-2 font-medium">{emp.name}</td>
-                        <td className="px-3 py-2 hidden md:table-cell">
-                          <Badge variant="outline" className="text-xs">
-                            {emp.employment_type || "—"}
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-2 hidden lg:table-cell text-xs text-muted-foreground max-w-48 truncate">
-                          {empresaPagante}
-                        </td>
-                        <td className="px-3 py-2 text-right text-muted-foreground">
-                          {formatMoney(emp.salary || 0)}
-                        </td>
+                     return (
+                       <tr key={emp.id} className="border-t hover:bg-muted/30 transition-colors">
+                         <td className="px-3 py-2 text-muted-foreground">
+                           {isAvulso ? "—" : (emp.employee_number || String(idx + 1).padStart(3, "0"))}
+                         </td>
+                         <td className="px-3 py-2 font-medium">{emp.name}</td>
+                         <td className="px-3 py-2 hidden md:table-cell">
+                           <Badge variant="outline" className="text-xs">
+                             {emp.employment_type || "—"}
+                           </Badge>
+                         </td>
+                         <td className="px-3 py-2 hidden lg:table-cell text-xs text-muted-foreground max-w-48 truncate">
+                           {empresaPagante}
+                         </td>
+                         <td className="px-3 py-2 text-right text-muted-foreground">
+                           {isAvulso ? (
+                             <div>
+                               <div>{formatMoney(emp.salary || 0)} <span className="text-xs text-muted-foreground font-normal">/ diária</span></div>
+                               <div className="text-xs text-muted-foreground font-normal">{diasMes} {diasMes === 1 ? "dia" : "dias"}</div>
+                             </div>
+                           ) : (
+                             formatMoney(emp.salary || 0)
+                           )}
+                         </td>
                         <td className="px-3 py-2 text-center">
                           <Input
                             type="text"

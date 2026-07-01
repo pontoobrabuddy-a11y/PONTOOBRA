@@ -19,6 +19,22 @@ import {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+function formatCpfCnpj(value: string): string {
+  const clean = value.replace(/\D/g, "").slice(0, 14);
+  if (clean.length <= 11) {
+    return clean
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  } else {
+    return clean
+      .replace(/^(\d{2})(\d)/, "$1.$2")
+      .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1/$2")
+      .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+  }
+}
+
 function formatDate(dateStr: string | undefined): string {
   if (!dateStr) return "-";
   const d = new Date(dateStr + "T00:00:00");
@@ -683,16 +699,18 @@ Ianna - RH e Financeiro`;
             <TabsContent value="pessoal">
               <div className="grid gap-4 py-4">
                 {/* Nº Contabilidade */}
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right text-sm">Nº Contab.</Label>
-                  <Input
-                    type="number"
-                    className="col-span-3"
-                    placeholder="Ex: 42"
-                    value={formData.employee_number}
-                    onChange={(e) => setFormData({ ...formData, employee_number: e.target.value })}
-                  />
-                </div>
+                {formData.employment_type !== "Avulso" && (
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right text-sm">Nº Contab.</Label>
+                    <Input
+                      type="number"
+                      className="col-span-3"
+                      placeholder="Ex: 42"
+                      value={formData.employee_number}
+                      onChange={(e) => setFormData({ ...formData, employee_number: e.target.value })}
+                    />
+                  </div>
+                )}
                 {/* Nome */}
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right text-sm">Nome *</Label>
@@ -716,9 +734,9 @@ Ianna - RH e Financeiro`;
                   <Label className="text-right text-sm">CPF/CNPJ *</Label>
                   <Input
                     className="col-span-3"
-                    placeholder="000.000.000-00 ou 00.000.000/0001-00"
+                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
                     value={formData.cpf}
-                    onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, cpf: formatCpfCnpj(e.target.value) })}
                   />
                 </div>
                 {/* Telefone */}
@@ -778,7 +796,7 @@ Ianna - RH e Financeiro`;
                     className="col-span-3"
                     value={formData.admission_date}
                     onChange={(e) => setFormData({ ...formData, admission_date: e.target.value })}
-                    disabled={!!editingId}
+                    disabled={!!editingId && formData.employment_type !== "Avulso"}
                   />
                 </div>
               </div>
@@ -792,7 +810,15 @@ Ianna - RH e Financeiro`;
                   <Label className="text-right text-sm">Vínculo</Label>
                   <Select
                     value={formData.employment_type}
-                    onValueChange={(v) => setFormData({ ...formData, employment_type: v || "" })}
+                    onValueChange={(v) => {
+                      const newType = v || "";
+                      setFormData({
+                        ...formData,
+                        employment_type: newType,
+                        ...(newType === "PJ" ? { salary_family: false } : {}),
+                        ...(newType === "Avulso" ? { employee_number: "" } : {}),
+                      });
+                    }}
                   >
                     <SelectTrigger className="col-span-3">
                       <SelectValue placeholder="Tipo de contrato" />
@@ -800,7 +826,6 @@ Ianna - RH e Financeiro`;
                     <SelectContent>
                       <SelectItem value="CLT">CLT</SelectItem>
                       <SelectItem value="PJ">PJ (Pessoa Jurídica)</SelectItem>
-                      <SelectItem value="MEI">MEI</SelectItem>
                       <SelectItem value="Avulso">Avulso</SelectItem>
                     </SelectContent>
                   </Select>
@@ -825,65 +850,69 @@ Ianna - RH e Financeiro`;
                     </SelectContent>
                   </Select>
                 </div>
-                {/* Salário Fixo */}
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right text-sm">Salário (R$)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    className="col-span-3"
-                    placeholder="0,00"
-                    value={formData.salary}
-                    onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
-                  />
-                </div>
-                {/* Tipo de Chave PIX */}
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right text-sm">Tipo PIX</Label>
-                  <Select
-                    value={formData.pix_type}
-                    onValueChange={(v) => setFormData({ ...formData, pix_type: v || "" })}
-                  >
-                    <SelectTrigger className="col-span-3">
-                      <SelectValue placeholder="Tipo de chave PIX" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CPF">CPF</SelectItem>
-                      <SelectItem value="CNPJ">CNPJ</SelectItem>
-                      <SelectItem value="Telefone">Telefone</SelectItem>
-                      <SelectItem value="Email">E-mail</SelectItem>
-                      <SelectItem value="Aleatoria">Chave Aleatória</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {/* Chave PIX */}
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right text-sm">Chave PIX</Label>
-                  <Input
-                    className="col-span-3"
-                    placeholder="Informe a chave PIX"
-                    value={formData.pix_key}
-                    onChange={(e) => setFormData({ ...formData, pix_key: e.target.value })}
-                  />
-                </div>
-                {/* Salário Família */}
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right text-sm">Salário Família</Label>
-                  <div className="col-span-3 flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="salary_family"
-                      className="h-4 w-4 rounded"
-                      checked={formData.salary_family}
-                      onChange={(e) => setFormData({ ...formData, salary_family: e.target.checked })}
-                    />
-                    <Label htmlFor="salary_family" className="text-sm cursor-pointer">
-                      Recebe Salário Família (somente ajudantes)
-                    </Label>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
+                 {/* Salário / Diária */}
+                 <div className="grid grid-cols-4 items-center gap-4">
+                   <Label className="text-right text-sm">
+                     {formData.employment_type === "Avulso" ? "Diária (R$)" : "Salário (R$)"}
+                   </Label>
+                   <Input
+                     type="number"
+                     step="0.01"
+                     className="col-span-3"
+                     placeholder={formData.employment_type === "Avulso" ? "Valor da diária" : "0,00"}
+                     value={formData.salary}
+                     onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
+                   />
+                 </div>
+                 {/* Tipo de Chave PIX */}
+                 <div className="grid grid-cols-4 items-center gap-4">
+                   <Label className="text-right text-sm">Tipo PIX</Label>
+                   <Select
+                     value={formData.pix_type}
+                     onValueChange={(v) => setFormData({ ...formData, pix_type: v || "" })}
+                   >
+                     <SelectTrigger className="col-span-3">
+                       <SelectValue placeholder="Tipo de chave PIX" />
+                     </SelectTrigger>
+                     <SelectContent>
+                       <SelectItem value="CPF">CPF</SelectItem>
+                       <SelectItem value="CNPJ">CNPJ</SelectItem>
+                       <SelectItem value="Telefone">Telefone</SelectItem>
+                       <SelectItem value="Email">E-mail</SelectItem>
+                       <SelectItem value="Aleatoria">Chave Aleatória</SelectItem>
+                     </SelectContent>
+                   </Select>
+                 </div>
+                 {/* Chave PIX */}
+                 <div className="grid grid-cols-4 items-center gap-4">
+                   <Label className="text-right text-sm">Chave PIX</Label>
+                   <Input
+                     className="col-span-3"
+                     placeholder="Informe a chave PIX"
+                     value={formData.pix_key}
+                     onChange={(e) => setFormData({ ...formData, pix_key: e.target.value })}
+                   />
+                 </div>
+                 {/* Salário Família */}
+                 {formData.employment_type !== "PJ" && (
+                   <div className="grid grid-cols-4 items-center gap-4">
+                     <Label className="text-right text-sm">Salário Família</Label>
+                     <div className="col-span-3 flex items-center gap-2">
+                       <input
+                         type="checkbox"
+                         id="salary_family"
+                         className="h-4 w-4 rounded"
+                         checked={formData.salary_family}
+                         onChange={(e) => setFormData({ ...formData, salary_family: e.target.checked })}
+                       />
+                       <Label htmlFor="salary_family" className="text-sm cursor-pointer">
+                         Recebe Salário Família (somente ajudantes)
+                       </Label>
+                     </div>
+                   </div>
+                 )}
+               </div>
+             </TabsContent>
 
             {/* ── Aba 3: Desligamento (só no modo edição) ── */}
             {editingId && (
@@ -896,105 +925,119 @@ Ianna - RH e Financeiro`;
                       value={formData.status}
                       onValueChange={(v) => setFormData({ ...formData, status: v || "ativo" })}
                     >
-                      <SelectTrigger className="col-span-3">
-                        <SelectValue placeholder="Status do funcionário" />
+                      <SelectTrigger className="col-span-3 flex justify-between items-center text-left">
+                        <span>
+                          {formData.status === "ativo" && "Ativo"}
+                          {formData.status === "aviso_previo" && "Em Aviso Prévio"}
+                          {formData.status === "inativo" && (formData.employment_type === "Avulso" ? "Inativo" : "Demitido")}
+                          {!formData.status && "Status do funcionário"}
+                        </span>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ativo">Ativo</SelectItem>
-                        <SelectItem value="aviso_previo">Em Aviso Prévio</SelectItem>
-                        <SelectItem value="inativo">Demitido</SelectItem>
+                        {formData.employment_type !== "Avulso" && (
+                          <SelectItem value="aviso_previo">Em Aviso Prévio</SelectItem>
+                        )}
+                        <SelectItem value="inativo">
+                          {formData.employment_type === "Avulso" ? "Inativo" : "Demitido"}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  {/* Tipo de Demissão */}
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label className="text-right text-sm">Tipo</Label>
-                    <Select
-                      value={formData.dismissal_type}
-                      onValueChange={(v) => setFormData({ ...formData, dismissal_type: v || "" })}
-                    >
-                      <SelectTrigger className="col-span-3 flex justify-between items-center text-left">
-                        <span>
-                          {formData.dismissal_type === "pedido_com" && "Pedido de demissão — com aviso"}
-                          {formData.dismissal_type === "pedido_sem" && "Pedido de demissão — sem aviso"}
-                          {formData.dismissal_type === "empresa_com" && "Demissão pela empresa — com aviso"}
-                          {formData.dismissal_type === "empresa_sem" && "Demissão pela empresa — sem aviso (indenizado)"}
-                          {!formData.dismissal_type && "Tipo de demissão"}
-                        </span>
-                      </SelectTrigger>
-                      <SelectContent className="w-fit max-w-lg">
-                        <SelectItem value="pedido_com">Pedido de demissão — com aviso</SelectItem>
-                        <SelectItem value="pedido_sem">Pedido de demissão — sem aviso</SelectItem>
-                        <SelectItem value="empresa_com">Demissão pela empresa — com aviso</SelectItem>
-                        <SelectItem value="empresa_sem">Demissão pela empresa — sem aviso (indenizado)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {/* Data início e fim aviso (se com aviso) */}
-                  {(formData.dismissal_type === "pedido_com" || formData.dismissal_type === "empresa_com") && (
+
+                  {formData.employment_type !== "Avulso" && (
                     <>
+                      {/* Tipo de Demissão */}
                       <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right text-sm">Início Aviso</Label>
-                        <Input
-                          type="date"
-                          className="col-span-3"
-                          value={formData.notice_start_date}
-                          onChange={(e) => setFormData({ ...formData, notice_start_date: e.target.value })}
-                        />
+                        <Label className="text-right text-sm">Tipo</Label>
+                        <Select
+                          value={formData.dismissal_type}
+                          onValueChange={(v) => setFormData({ ...formData, dismissal_type: v || "" })}
+                        >
+                          <SelectTrigger className="col-span-3 flex justify-between items-center text-left">
+                            <span>
+                              {formData.dismissal_type === "pedido_com" && "Pedido de demissão — com aviso"}
+                              {formData.dismissal_type === "pedido_sem" && "Pedido de demissão — sem aviso"}
+                              {formData.dismissal_type === "empresa_com" && "Demissão pela empresa — com aviso"}
+                              {formData.dismissal_type === "empresa_sem" && "Demissão pela empresa — sem aviso (indenizado)"}
+                              {!formData.dismissal_type && "Tipo de demissão"}
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent className="w-fit max-w-lg">
+                            <SelectItem value="pedido_com">Pedido de demissão — com aviso</SelectItem>
+                            <SelectItem value="pedido_sem">Pedido de demissão — sem aviso</SelectItem>
+                            <SelectItem value="empresa_com">Demissão pela empresa — com aviso</SelectItem>
+                            <SelectItem value="empresa_sem">Demissão pela empresa — sem aviso (indenizado)</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
+                      {/* Data início e fim aviso (se com aviso) */}
+                      {(formData.dismissal_type === "pedido_com" || formData.dismissal_type === "empresa_com") && (
+                        <>
+                          <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right text-sm">Início Aviso</Label>
+                            <Input
+                              type="date"
+                              className="col-span-3"
+                              value={formData.notice_start_date}
+                              onChange={(e) => setFormData({ ...formData, notice_start_date: e.target.value })}
+                            />
+                          </div>
+                          <div className="grid grid-cols-4 items-center gap-4">
+                            <Label className="text-right text-sm">Fim Aviso</Label>
+                            <Input
+                              type="date"
+                              className="col-span-3"
+                              value={formData.notice_end_date}
+                              onChange={(e) => setFormData({ ...formData, notice_end_date: e.target.value })}
+                            />
+                          </div>
+                        </>
+                      )}
+                      {/* Último Dia de Trabalho (calculado) */}
                       <div className="grid grid-cols-4 items-center gap-4">
-                        <Label className="text-right text-sm">Fim Aviso</Label>
-                        <Input
-                          type="date"
-                          className="col-span-3"
-                          value={formData.notice_end_date}
-                          onChange={(e) => setFormData({ ...formData, notice_end_date: e.target.value })}
-                        />
+                        <Label className="text-right text-sm text-muted-foreground">Últ. Dia Trab.</Label>
+                        <div className="col-span-3">
+                          <Input
+                            readOnly
+                            value={lastWorkDateCalc ? formatDate(lastWorkDateCalc) : "—"}
+                            className="bg-muted cursor-not-allowed text-muted-foreground"
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formData.dismissal_type === "empresa_com" && "Fim do aviso − 7 dias corridos"}
+                            {formData.dismissal_type === "pedido_com" && "Início do aviso + 30 dias corridos"}
+                            {(formData.dismissal_type === "pedido_sem" || formData.dismissal_type === "empresa_sem") && "Igual à data de demissão direta"}
+                          </p>
+                        </div>
+                      </div>
+                      {/* Data de demissão direta (sem aviso) */}
+                      {(formData.dismissal_type === "pedido_sem" || formData.dismissal_type === "empresa_sem") && (
+                        <div className="grid grid-cols-4 items-center gap-4">
+                          <Label className="text-right text-sm">Data Demissão</Label>
+                          <Input
+                            type="date"
+                            className="col-span-3"
+                            value={formData.dismissal_date}
+                            onChange={(e) => setFormData({ ...formData, dismissal_date: e.target.value })}
+                          />
+                        </div>
+                      )}
+                      {/* Tempo trabalhado */}
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right text-sm text-muted-foreground">Tempo Trab.</Label>
+                        <div className="col-span-3">
+                          <Input
+                            readOnly
+                            value={workedTimeCalc}
+                            className="bg-muted cursor-not-allowed text-muted-foreground"
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Calculado desde a admissão até hoje (ou data de demissão).
+                          </p>
+                        </div>
                       </div>
                     </>
                   )}
-                  {/* Último Dia de Trabalho (calculado) */}
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label className="text-right text-sm text-muted-foreground">Últ. Dia Trab.</Label>
-                    <div className="col-span-3">
-                      <Input
-                        readOnly
-                        value={lastWorkDateCalc ? formatDate(lastWorkDateCalc) : "—"}
-                        className="bg-muted cursor-not-allowed text-muted-foreground"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {formData.dismissal_type === "empresa_com" && "Fim do aviso − 7 dias corridos"}
-                        {formData.dismissal_type === "pedido_com" && "Início do aviso + 30 dias corridos"}
-                        {(formData.dismissal_type === "pedido_sem" || formData.dismissal_type === "empresa_sem") && "Igual à data de demissão direta"}
-                      </p>
-                    </div>
-                  </div>
-                  {/* Data de demissão direta (sem aviso) */}
-                  {(formData.dismissal_type === "pedido_sem" || formData.dismissal_type === "empresa_sem") && (
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label className="text-right text-sm">Data Demissão</Label>
-                      <Input
-                        type="date"
-                        className="col-span-3"
-                        value={formData.dismissal_date}
-                        onChange={(e) => setFormData({ ...formData, dismissal_date: e.target.value })}
-                      />
-                    </div>
-                  )}
-                  {/* Tempo trabalhado */}
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label className="text-right text-sm text-muted-foreground">Tempo Trab.</Label>
-                    <div className="col-span-3">
-                      <Input
-                        readOnly
-                        value={workedTimeCalc}
-                        className="bg-muted cursor-not-allowed text-muted-foreground"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Calculado desde a admissão até hoje (ou data de demissão).
-                      </p>
-                    </div>
-                  </div>
                 </div>
               </TabsContent>
             )}

@@ -58,7 +58,8 @@ export async function updateSession(request: NextRequest) {
         path.startsWith('/funcionarios') ||
         path.startsWith('/relatorios') ||
         path.startsWith('/rh-financeiro') ||
-        path.startsWith('/pagamentos')
+        path.startsWith('/pagamentos') ||
+        path.startsWith('/emails')
       ) {
         const url = request.nextUrl.clone()
         url.pathname = '/' // joga pro dashboard

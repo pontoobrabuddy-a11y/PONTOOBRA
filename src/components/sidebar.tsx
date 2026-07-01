@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Users, HardHat, CheckSquare, BarChart3, Settings, LogOut, TrendingUp, Wallet } from "lucide-react";
+import { Users, HardHat, CheckSquare, BarChart3, Settings, LogOut, TrendingUp, Wallet, Mail } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ const navigation = [
   { name: "RH & Financeiro", href: "/rh-financeiro", icon: TrendingUp, adminOnly: true },
   { name: "Funcionários", href: "/funcionarios", icon: Users, adminOnly: true },
   { name: "Pagamentos", href: "/pagamentos", icon: Wallet, adminOnly: true },
+  { name: "Gerador de E-mails", href: "/emails", icon: Mail, adminOnly: true },
   { name: "Relatórios", href: "/relatorios", icon: Settings, adminOnly: true },
 ];
 

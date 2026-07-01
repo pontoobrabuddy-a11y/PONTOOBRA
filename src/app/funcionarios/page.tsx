@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Plus, Search, Edit2, Trash2, UserX, DollarSign,
-  ClipboardList, Mail, ArrowUpDown, Hash, Copy, Check
+  ClipboardList, Mail, ArrowUpDown, Hash, Copy, Check, Printer
 } from "lucide-react";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -366,38 +366,83 @@ export default function FuncionariosPage() {
 
   // ─── Checklist ───────────────────────────────────────────────────────────
 
-  const CHECKLIST_BASE = [
-    "Identidade (RG)",
-    "CPF",
-    "Reservista (se aplicável)",
-    "Título Eleitoral",
-    "Carteira de Trabalho (física ou digital PDF)",
-    "Certidão de Nascimento ou Casamento",
-    "Comprovante de Residência",
+  const DOCS_ADMISSAO = [
+    { k: "id", t: "IDENTIDADE (RG)", obs: "" },
+    { k: "cpf", t: "CPF", obs: "" },
+    { k: "reservista", t: "RESERVISTA", obs: "SE TIVER" },
+    { k: "titulo", t: "TÍTULO ELEITORAL", obs: "" },
+    { k: "ctps", t: "CARTEIRA DE TRABALHO", obs: "FÍSICA OU DIGITAL EM PDF" },
+    { k: "certidao", t: "CERTIDÃO DE NASCIMENTO OU CASAMENTO", obs: "" },
+    { k: "residencia", t: "COMPROVANTE DE RESIDÊNCIA", obs: "" },
+    { k: "filhos", t: "CERTIDÃO DE NASCIMENTO DOS FILHOS ATÉ 14 ANOS", obs: "SALÁRIO-FAMÍLIA — SOMENTE AJUDANTES" }
   ];
 
   const openChecklist = (emp: Employee) => {
     setChecklistEmp(emp);
-    setChecklistChecked({});
+    const saved = localStorage.getItem(`checklist_docs_${emp.id}`);
+    if (saved) {
+      try {
+        setChecklistChecked(JSON.parse(saved));
+      } catch (e) {
+        setChecklistChecked({});
+      }
+    } else {
+      setChecklistChecked({});
+    }
     setCopySuccess(false);
     setIsChecklistOpen(true);
   };
 
-  const getChecklistItems = (emp: Employee | null): string[] => {
-    const items = [...CHECKLIST_BASE];
-    if (emp?.salary_family) {
-      items.push("Certidão de Nascimento dos filhos até 14 anos (Salário Família)");
-    }
-    return items;
+  const toggleDoc = (k: string, checked: boolean) => {
+    if (!checklistEmp) return;
+    const newChecked = { ...checklistChecked, [k]: checked };
+    setChecklistChecked(newChecked);
+    localStorage.setItem(`checklist_docs_${checklistEmp.id}`, JSON.stringify(newChecked));
   };
 
-  const copyChecklist = async () => {
+  const printChecklist = () => {
     if (!checklistEmp) return;
-    const items = getChecklistItems(checklistEmp);
-    const text =
-      `Documentos necessários — ${checklistEmp.name}\n\n` +
-      items.map((item) => `${checklistChecked[item] ? "✅" : "☐"} ${item}`).join("\n");
-    await navigator.clipboard.writeText(text);
+    const ehAjudante = (checklistEmp.role || "").toLowerCase().includes("ajudante") || !!checklistEmp.salary_family;
+    const items = DOCS_ADMISSAO.filter(d => d.k !== "filhos" || ehAjudante);
+    
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(`
+      <html>
+        <head>
+          <title>Checklist - ${checklistEmp.name}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 30px; color: #111; }
+            h2 { margin: 0 0 10px 0; }
+            p { margin: 0 0 20px 0; color: #555; }
+            ul { list-style: none; padding: 0; }
+            li { margin: 12px 0; font-size: 16px; display: flex; align-items: center; gap: 10px; }
+            small { color: #666; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <h2>Checklist de Documentação — Admissão</h2>
+          <p><b>${checklistEmp.name}</b>${checklistEmp.role ? ` · ${checklistEmp.role}` : ""}</p>
+          <ul>
+            ${items.map(d => `<li>⬜ ${d.t} ${d.obs ? `<small>(${d.obs})</small>` : ""}</li>`).join("")}
+          </ul>
+        </body>
+      </html>
+    `);
+    w.document.close();
+    w.print();
+  };
+
+  const generateWhatsappMessage = async () => {
+    if (!checklistEmp) return;
+    const ehAjudante = (checklistEmp.role || "").toLowerCase().includes("ajudante") || !!checklistEmp.salary_family;
+    const items = DOCS_ADMISSAO.filter(d => d.k !== "filhos" || ehAjudante)
+      .map(d => `• ${d.t}${d.obs ? ` (${d.obs})` : ""}`)
+      .join("\n");
+    const nicknamePart = checklistEmp.nickname ? `, ${checklistEmp.nickname}` : "";
+    const msg = `Olá${nicknamePart}! Seja bem-vindo(a) à equipe. 🙌\n\nPara concluir sua admissão, precisamos dos seguintes documentos (foto legível ou PDF):\n\n${items}\n\nPode nos enviar por aqui assim que possível. Qualquer dúvida, estamos à disposição!`;
+    
+    await navigator.clipboard.writeText(msg);
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 2000);
   };
@@ -1036,48 +1081,96 @@ Ianna - RH e Financeiro`;
 
       {/* ── Checklist Dialog ── */}
       <Dialog open={isChecklistOpen} onOpenChange={setIsChecklistOpen}>
-        <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              Checklist de Documentos — {checklistEmp?.name}
+            <DialogTitle className="text-xl font-bold">
+              Documentação — {checklistEmp?.name}
             </DialogTitle>
           </DialogHeader>
-          <div className="py-2 space-y-2">
-            {checklistEmp && getChecklistItems(checklistEmp).map((item) => (
-              <label
-                key={item}
-                className="flex items-start gap-3 p-2 rounded-md hover:bg-muted cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 mt-0.5 rounded"
-                  checked={!!checklistChecked[item]}
-                  onChange={(e) =>
-                    setChecklistChecked({ ...checklistChecked, [item]: e.target.checked })
-                  }
-                />
-                <span className={`text-sm ${checklistChecked[item] ? "line-through text-muted-foreground" : ""}`}>
-                  {item}
-                </span>
-              </label>
-            ))}
-
-            {checklistEmp?.salary_family && (
-              <p className="text-xs text-yellow-600 bg-yellow-50 p-2 rounded-md mt-2">
-                ⚠️ Este funcionário recebe Salário Família. Certidões de nascimento dos filhos até 14 anos são obrigatórias.
-              </p>
-            )}
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-4">
+            {/* Coluna Esquerda: Checklist */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold tracking-wider uppercase text-blue-500">
+                Checklist de documentos para admissão
+              </h3>
+              <div className="flex flex-col gap-2">
+                {checklistEmp && DOCS_ADMISSAO.filter(d => d.k !== "filhos" || (checklistEmp.role || "").toLowerCase().includes("ajudante") || !!checklistEmp.salary_family).map((doc) => {
+                  const isChecked = !!checklistChecked[doc.k];
+                  return (
+                    <label
+                      key={doc.k}
+                      className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                        isChecked 
+                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" 
+                          : "bg-slate-900/40 border-slate-800 text-slate-300 hover:border-slate-700"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 mt-1 rounded border-slate-700 bg-slate-850 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900"
+                        checked={isChecked}
+                        onChange={(e) => toggleDoc(doc.k, e.target.checked)}
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold tracking-wide">{doc.t}</span>
+                        {doc.obs && <span className="text-xs opacity-75 mt-0.5">{doc.obs}</span>}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              
+              <div className="flex gap-2">
+                <Button 
+                  onClick={generateWhatsappMessage} 
+                  className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
+                >
+                  <Mail className="h-4 w-4 mr-2" />
+                  {copySuccess ? "Mensagem Copiada!" : "Gerar mensagem p/ funcionário"}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={printChecklist}
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  Imprimir / PDF
+                </Button>
+              </div>
+            </div>
+            
+            {/* Coluna Direita: Fluxo */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold tracking-wider uppercase text-blue-500">
+                Fluxo de admissão (IANNA)
+              </h3>
+              <div className="space-y-3">
+                {[
+                  "MANOEL/MANUEL capta o funcionário e ele já inicia o trabalho.",
+                  "IANNA contata o funcionário e envia o checklist de documentos.",
+                  "Recebe os documentos, escaneia e anexa na pasta do Drive.",
+                  "Cadastra o funcionário neste sistema.",
+                  "Gera o e-mail de admissão e envia para a contabilidade.",
+                  "Recebe os documentos da contabilidade, baixa, salva no Drive e imprime.",
+                  "Funcionário e Manuel assinam; IANNA escaneia e salva os assinados.",
+                  "Responde o mesmo e-mail à contabilidade com os documentos assinados. Funcionário admitido."
+                ].map((step, idx) => (
+                  <div key={idx} className="flex gap-3 items-start border-b border-dashed border-slate-800 pb-3 last:border-0">
+                    <span className="flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-xs font-bold shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <p className="text-sm text-slate-300 leading-relaxed">{step}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={copyChecklist}
-              className="gap-2"
-            >
-              {copySuccess ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
-              {copySuccess ? "Copiado!" : "Copiar Lista"}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsChecklistOpen(false)} className="border-slate-700 text-slate-300">
+              Fechar
             </Button>
-            <Button variant="outline" onClick={() => setIsChecklistOpen(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -208,8 +208,8 @@ export default function PagamentosPage() {
         valor: st.amount,
         vencimento: st.due_date,
         paid_at: st.paid_at ? st.paid_at.split("T")[0] : undefined,
-        competence_mes: st.competence_month,
-        competence_ano: st.competence_year,
+        competencia_mes: st.competence_month,
+        competencia_ano: st.competence_year,
         status,
       };
     });

@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RH & Financeiro — Buddy / Casana</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0f1216; --panel:#171b21; --panel2:#1d2229; --line:#2a313b;
+  --ink:#e8ecf1; --muted:#9aa6b4; --soft:#6b7686;
+  --accent:#3d8bff; --accent-d:#2f6fd6;
+  --buddy:#c98a2b; --casana:#37a06f;
+  --ok:#3ec98a; --warn:#e7b04b; --bad:#e0604f; --aviso:#d98b34;
+  --chip:#222a33;
+  --radius:10px; --radius-s:7px;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Inter",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  font-size:14px; line-height:1.45;
+}
+a{color:var(--accent)}
+h1,h2,h3,h4{margin:0 0 .4em;font-weight:600;line-height:1.2}
+button{font-family:inherit}
+input,select,textarea{
+  font-family:inherit;font-size:13px;color:var(--ink);
+  background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-s);
+  padding:7px 9px;width:100%;
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+textarea{resize:vertical;min-height:60px;line-height:1.5}
+label{display:block;font-size:11.5px;color:var(--muted);margin:0 0 4px;font-weight:500;text-transform:uppercase;letter-spacing:.03em}
+.field{margin-bottom:11px}
+
+/* layout */
+.shell{display:flex;min-height:100vh}
+.side{
+  width:212px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+}
+.brand{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+.brand .logo{font-weight:700;font-size:15px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.brand .logo .dot{width:9px;height:9px;border-radius:50%;background:linear-gradient(135deg,var(--buddy),var(--casana))}
+.brand .sub{font-size:10.5px;color:var(--soft);margin-top:3px;text-transform:uppercase;letter-spacing:.08em}
+.nav{padding:8px;overflow-y:auto;flex:1}
+.nav .grp{font-size:10px;color:var(--soft);text-transform:uppercase;letter-spacing:.1em;padding:12px 10px 5px}
+.nav button{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  background:none;border:none;color:var(--muted);padding:8px 10px;border-radius:var(--radius-s);
+  cursor:pointer;font-size:13px;margin-bottom:1px;transition:.12s;
+}
+.nav button:hover{background:var(--panel2);color:var(--ink)}
+.nav button.on{background:var(--accent);color:#fff;font-weight:500}
+.nav button .ic{width:16px;text-align:center;font-size:13px;opacity:.9}
+.side-foot{padding:10px;border-top:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{
+  display:flex;align-items:center;gap:12px;padding:13px 22px;border-bottom:1px solid var(--line);
+  background:var(--panel);position:sticky;top:0;z-index:5;
+}
+.topbar h2{font-size:16px;margin:0}
+.topbar .spacer{flex:1}
+.month-pick{display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-s);padding:3px 4px}
+.month-pick input{border:none;background:none;width:140px;padding:4px 6px}
+.content{padding:22px;max-width:1280px}
+.view{display:none}
+.view.on{display:block}
+
+/* buttons */
+.btn{
+  background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+  border-radius:var(--radius-s);padding:8px 13px;cursor:pointer;font-size:13px;font-weight:500;
+  display:inline-flex;align-items:center;gap:7px;transition:.12s;
+}
+.btn:hover{border-color:var(--soft);background:var(--panel)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.pri:hover{background:var(--accent-d)}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#06241a}
+.btn.danger{color:var(--bad);border-color:#5a3330}
+.btn.danger:hover{background:#2a1c1b}
+.btn.sm{padding:5px 9px;font-size:12px}
+.btn.icon{padding:6px 8px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* cards */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:18px}
+.card h3{font-size:14px;display:flex;align-items:center;gap:8px}
+.card .card-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.card .card-head h3{margin:0}
+.card .card-head .spacer{flex:1}
+.muted{color:var(--muted)}
+.soft{color:var(--soft)}
+.hint{font-size:12px;color:var(--soft);line-height:1.5}
+
+/* kpi */
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:13px;margin-bottom:18px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px 16px;position:relative;overflow:hidden}
+.kpi .lab{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px}
+.kpi .val{font-size:27px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.kpi .val.money{font-size:21px}
+.kpi .sub{font-size:11.5px;color:var(--soft);margin-top:6px}
+.kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px}
+.kpi.b-blue .bar{background:var(--accent)} .kpi.b-green .bar{background:var(--ok)}
+.kpi.b-amber .bar{background:var(--warn)} .kpi.b-red .bar{background:var(--bad)}
+.kpi.b-buddy .bar{background:var(--buddy)} .kpi.b-casana .bar{background:var(--casana)}
+
+/* tables */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{
+  text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+  padding:10px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);white-space:nowrap;font-weight:600;
+}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--panel2)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12.5px}
+.empty{padding:34px;text-align:center;color:var(--soft);font-size:13px}
+
+/* chips / badges */
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2.5px 8px;border-radius:20px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.chip.buddy{background:rgba(201,138,43,.16);color:#e0a955}
+.chip.casana{background:rgba(55,160,111,.16);color:#4dbd8a}
+.chip.ativo{background:rgba(62,201,138,.15);color:var(--ok)}
+.chip.aviso{background:rgba(217,139,52,.16);color:var(--aviso)}
+.chip.inativo{background:rgba(155,166,180,.13);color:var(--soft)}
+.chip.pago{background:rgba(62,201,138,.15);color:var(--ok)}
+.chip.pend{background:rgba(231,176,75,.15);color:var(--warn)}
+.chip.clt{background:rgba(61,139,255,.14);color:#74a8ff}
+.chip.pj{background:rgba(155,110,220,.16);color:#b08ce0}
+.chip.avulso{background:rgba(110,166,180,.15);color:#8fbfcf}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(5,7,10,.66);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;z-index:50;padding:34px 16px;overflow-y:auto}
+.overlay.on{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:100%;max-width:760px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.modal.wide{max-width:940px}
+.modal-head{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);border-radius:14px 14px 0 0;z-index:2}
+.modal-head h3{margin:0;font-size:15px}
+.modal-head .spacer{flex:1}
+.x{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:4px 8px;border-radius:6px}
+.x:hover{background:var(--panel2);color:var(--ink)}
+.modal-body{padding:20px}
+.modal-foot{display:flex;gap:9px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--line);flex-wrap:wrap;position:sticky;bottom:0;background:var(--panel);border-radius:0 0 14px 14px}
+
+/* grid forms */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:0 14px}
+.span2{grid-column:span 2}
+.section-lab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);font-weight:600;margin:18px 0 11px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.section-lab:first-child{margin-top:0}
+
+/* checklist */
+.checklist{display:flex;flex-direction:column;gap:2px}
+.checklist .ci{display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius-s);background:var(--panel2);cursor:pointer}
+.checklist .ci:hover{border-color:var(--soft)}
+.checklist .ci.done{background:rgba(62,201,138,.08);border-color:rgba(62,201,138,.3)}
+.checklist .ci input{width:auto;margin-top:2px}
+.checklist .ci .t{flex:1}
+.checklist .ci .t b{display:block;font-weight:500}
+.checklist .ci .t small{color:var(--soft);font-size:11.5px}
+.steps{counter-reset:s;display:flex;flex-direction:column;gap:0}
+.steps .st{display:flex;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line)}
+.steps .st:last-child{border-bottom:none}
+.steps .st .n{flex-shrink:0;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.steps .st .tx{font-size:12.5px;color:var(--muted);padding-top:2px;line-height:1.5}
+
+/* tabs inside view */
+.subtabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
+.subtabs button{background:none;border:none;color:var(--muted);padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent;margin-bottom:-1px}
+.subtabs button:hover{color:var(--ink)}
+.subtabs button.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+.subview{display:none}.subview.on{display:block}
+
+/* diarias grid */
+.diarias-grid{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius)}
+.diarias-grid table{font-size:12px}
+.diarias-grid th.day,.diarias-grid td.day{width:30px;text-align:center;padding:6px 2px;min-width:30px}
+.diarias-grid th.day{font-size:9.5px}
+.diarias-grid th.wknd,.diarias-grid td.wknd{background:rgba(255,255,255,.025)}
+.diarias-grid td.namecol{position:sticky;left:0;background:var(--panel);z-index:1;min-width:170px;font-weight:500;white-space:nowrap}
+.diarias-grid th.namecol{position:sticky;left:0;z-index:3}
+.dcell{width:24px;height:24px;border-radius:5px;border:1px solid var(--line);background:var(--panel2);font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;margin:0 auto;color:var(--muted)}
+.dcell.P{background:rgba(62,201,138,.18);color:var(--ok);border-color:transparent}
+.dcell.F{background:rgba(224,96,79,.2);color:var(--bad);border-color:transparent}
+.dcell.J{background:rgba(231,176,75,.2);color:var(--warn);border-color:transparent}
+
+/* email preview */
+.email-prev{background:#fff;color:#1a1a1a;border-radius:8px;padding:22px;font-family:Arial,sans-serif;font-size:13.5px;line-height:1.6;max-height:480px;overflow-y:auto}
+.email-prev .hl{background:#fff3a3;font-weight:bold;padding:1px 3px}
+.email-prev .blk{background:#fff8c4;padding:10px 12px;border-radius:5px;margin:10px 0;border:1px solid #f0e08a}
+.email-prev .blk b{display:inline}
+.email-prev .lab-blk{font-weight:bold;background:#fff3a3;padding:2px 6px;border-radius:3px}
+
+.flex{display:flex;gap:14px}.flex>*{flex:1}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#0b0e12;padding:11px 20px;border-radius:9px;font-weight:600;font-size:13px;z-index:99;opacity:0;transition:.25s;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.note-box{background:rgba(61,139,255,.07);border:1px solid rgba(61,139,255,.25);border-radius:var(--radius-s);padding:12px 14px;font-size:12.5px;color:#bcd2f5;line-height:1.55}
+.warn-box{background:rgba(231,176,75,.08);border:1px solid rgba(231,176,75,.3);border-radius:var(--radius-s);padding:12px 14px;font-size:12.5px;color:#e8cf9a;line-height:1.55}
+.pill-toggle{display:inline-flex;border:1px solid var(--line);border-radius:20px;overflow:hidden;background:var(--panel2)}
+.pill-toggle button{background:none;border:none;color:var(--muted);padding:5px 13px;cursor:pointer;font-size:12px}
+.pill-toggle button.on{background:var(--accent);color:#fff}
+
+@media (max-width:880px){
+  .side{position:fixed;left:-220px;z-index:40;transition:.2s}.side.open{left:0}
+  .shell.menu-open .side{left:0}
+  .g2,.g3,.g4,.split{grid-template-columns:1fr}.span2{grid-column:span 1}
+  .menu-toggle{display:inline-flex!important}
+}
+.menu-toggle{display:none;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:7px 10px;cursor:pointer}
+
+@media print{
+  .side,.topbar,.no-print,.btn,.subtabs{display:none!important}
+  body{background:#fff;color:#000}.content{padding:0;max-width:none}
+  .card,.tbl-wrap,.kpi{border-color:#ccc;background:#fff;color:#000;break-inside:avoid}
+  .view{display:none!important}.view.printing{display:block!important}
+}
+</style>
+</head>
+<body>
+<div class="shell" id="shell">
+  <aside class="side" id="side">
+    <div class="brand">
+      <div class="logo"><span class="dot"></span> RH &amp; Financeiro</div>
+      <div class="sub">Buddy · Casana</div>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="grp">Visão geral</div>
+      <button data-view="dashGeral" class="on"><span class="ic">▦</span> Dashboard Geral</button>
+      <button data-view="dashRh"><span class="ic">◐</span> Dashboard RH / Financeiro</button>
+      <div class="grp">Operação</div>
+      <button data-view="funcionarios"><span class="ic">☰</span> Cadastro de Funcionários</button>
+      <button data-view="diarias"><span class="ic">▤</span> Controle de Diárias</button>
+      <button data-view="pagamentos"><span class="ic">$</span> Pagamentos</button>
+      <button data-view="encargos"><span class="ic">∑</span> Folha de Encargos</button>
+      <div class="grp">Saída</div>
+      <button data-view="emails"><span class="ic">✉</span> Geradores de E-mail</button>
+      <button data-view="relatorios"><span class="ic">▣</span> Relatórios</button>
+      <button data-view="config"><span class="ic">⚙</span> Configurações</button>
+    </nav>
+    <div class="side-foot">
+      <button class="btn sm" onclick="exportarJSON()" title="Backup completo">⬇ Backup</button>
+      <button class="btn sm" onclick="document.getElementById('imp').click()" title="Importar backup">⬆ Importar</button>
+      <input type="file" id="imp" accept=".json" style="display:none" onchange="importarJSON(this)">
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <button class="menu-toggle" onclick="document.getElementById('shell').classList.toggle('menu-open')">☰</button>
+      <h2 id="viewTitle">Dashboard Geral</h2>
+      <div class="spacer"></div>
+      <div class="month-pick">
+        <span class="soft" style="font-size:12px;padding-left:6px">Mês vigente</span>
+        <input type="month" id="mesVigente" onchange="onMesChange()">
+      </div>
+    </div>
+    <div class="content" id="content"><!-- views injected --></div>
+  </div>
+</div>
+<div class="overlay" id="overlay"></div>
+<div class="toast" id="toast"></div>
+<script>
+/* ===========================================================================
+   RH & FINANCEIRO — Buddy / Casana
+   Sistema operacional de RH e Financeiro (single-file, localStorage)
+   =========================================================================== */
+
+/* ---------- Constantes de empresa (pagador -> razão social / CNPJ) ---------- */
+const EMPRESAS = {
+  CASANA: { razao: "BUDDY & GENECY CONSTRUTORA LTDA", cnpj: "50.251.097/0001-83" },
+  BUDDY:  { razao: "GENECY CONSTRUÇÕES E SERVIÇOS LTDA", cnpj: "45.689.000/0001-89" }
+};
+// Conta de recebimento (observação operacional p/ IANNA):
+//  - PJ da BUDDY (emitem NF) recebem da conta BUDDY & GENECY (50.251.097/0001-83)
+//  - CLT recebem da conta GENECY (45.689.000/0001-89)  [confirmar com Kemuel]
+
+const DOCS_ADMISSAO = [
+  { k:"id", t:"Identidade (RG)" },
+  { k:"cpf", t:"CPF" },
+  { k:"reservista", t:"Reservista", obs:"se tiver" },
+  { k:"titulo", t:"Título eleitoral" },
+  { k:"ctps", t:"Carteira de trabalho", obs:"física ou digital em PDF" },
+  { k:"certidao", t:"Certidão de nascimento ou casamento" },
+  { k:"residencia", t:"Comprovante de residência" },
+  { k:"filhos", t:"Certidão de nascimento dos filhos até 14 anos", obs:"salário-família — somente ajudantes" }
+];
+
+/* ---------- Estado / persistência ---------- */
+const LS_KEY = "rhfin_buddy_casana_v1";
+let DB = {
+  funcionarios: [],
+  diarias: {},      // { "YYYY-MM": { funcId: { "DD": "P"|"F"|"J" } } }
+  pagamentos: {},   // { "YYYY-MM": { funcId: { q1:{v,pago,data}, q2:{v,pago,data}, mensal:{v,pago,data}, liquido, desconto } } }
+  impostos: {},     // { "YYYY-MM": [ {desc,valor,vencimento,pagamento,empresa,pago} ] }
+  encargos: {},     // { "YYYY-MM": { funcId: { verbas:[{desc,tipo,valor}], obs } } }
+  config: {
+    contabilidade: "Foxtrot",
+    signatario: "Felipe Moura da Costa",
+    cargaHoraria: "44 horas semanais",
+    horario1: "Segunda a quinta-feira: 07:00 às 12:00 / 13:00 às 17:00",
+    horario2: "Sexta-feira: 07:00 às 12:00 / 13:00 às 16:00"
+  },
+  seq: 1
+};
+let MES = "";          // YYYY-MM vigente
+let CURRENT_VIEW = "dashGeral";
+
+function load(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(raw){ const p = JSON.parse(raw); DB = Object.assign(DB, p); DB.config = Object.assign({contabilidade:"Foxtrot",signatario:"Felipe Moura da Costa",cargaHoraria:"44 horas semanais",horario1:"Segunda a quinta-feira: 07:00 às 12:00 / 13:00 às 17:00",horario2:"Sexta-feira: 07:00 às 12:00 / 13:00 às 16:00"}, p.config||{}); }
+  }catch(e){ console.warn("load falhou", e); }
+}
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(DB)); }catch(e){ toast("Erro ao salvar (armazenamento cheio?)"); } }
+
+/* ---------- Utilidades ---------- */
+const $ = s => document.querySelector(s);
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2200); }
+function uid(){ return "f"+(DB.seq++); }
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function money(n){ n = Number(n)||0; return n.toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function num(v){ if(v==null||v==="") return 0; return Number(String(v).replace(/\./g,"").replace(",",".").replace(/[^\d.-]/g,""))||0; }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function curMonth(){ return new Date().toISOString().slice(0,7); }
+
+/* datas: armazenadas como YYYY-MM-DD; exibidas dd/mm/yyyy */
+function fmtDate(iso){ if(!iso) return "—"; const [y,m,d]=iso.split("-"); return `${d}/${m}/${y}`; }
+function fmtDateLong(iso){ if(!iso) return "—"; const [y,m,d]=iso.split("-").map(Number); const meses=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"]; return `${String(d).padStart(2,"0")} de ${meses[m-1]} de ${y}`; }
+function mesLabel(ym){ if(!ym) return ""; const [y,m]=ym.split("-").map(Number); const meses=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]; return `${meses[m-1]} / ${y}`; }
+function parseISO(iso){ const [y,m,d]=iso.split("-").map(Number); return new Date(y,m-1,d); }
+function toISO(dt){ return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; }
+function addDays(iso,n){ const d=parseISO(iso); d.setDate(d.getDate()+n); return toISO(d); }
+
+/* dia útil: se sábado/domingo, volta para a sexta-feira anterior */
+function diaUtilOuAntes(iso){ let d=parseISO(iso); while(d.getDay()===0||d.getDay()===6){ d.setDate(d.getDate()-1); } return toISO(d); }
+
+/* data de pagamento da 1ª quinzena (dia 15) e 2ª (último dia do mês) já ajustadas */
+function dataQuinzena1(ym){ const [y,m]=ym.split("-").map(Number); return diaUtilOuAntes(`${y}-${String(m).padStart(2,"0")}-15`); }
+function dataQuinzena2(ym){ const [y,m]=ym.split("-").map(Number); const ult=new Date(y,m,0).getDate(); return diaUtilOuAntes(`${y}-${String(m).padStart(2,"0")}-${String(ult).padStart(2,"0")}`); }
+function dataMensal(ym){ return dataQuinzena2(ym); }
+
+/* tempo trabalhado entre duas datas (até hoje se fim vazio) */
+function tempoTrabalhado(ini, fim){
+  if(!ini) return "—";
+  const a=parseISO(ini), b=fim?parseISO(fim):new Date();
+  if(b<a) return "—";
+  let anos=b.getFullYear()-a.getFullYear();
+  let meses=b.getMonth()-a.getMonth();
+  let dias=b.getDate()-a.getDate();
+  if(dias<0){ meses--; const pm=new Date(b.getFullYear(),b.getMonth(),0).getDate(); dias+=pm; }
+  if(meses<0){ anos--; meses+=12; }
+  const p=[]; if(anos)p.push(anos+(anos>1?" anos":" ano")); if(meses)p.push(meses+(meses>1?" meses":" mês")); if(dias||!p.length)p.push(dias+(dias>1?" dias":" dia"));
+  return p.join(", ");
+}
+
+/* cálculo do último dia de trabalho a partir do aviso prévio
+   - demissão pela empresa c/ aviso trabalhado: últ. dia = fim do aviso - 7 dias corridos
+   - pedido de demissão c/ aviso: cumpre integral -> últ. dia = fim do aviso        */
+function calcUltimoDiaTrabalho(tipoSaida, fimAviso){
+  if(!fimAviso) return "";
+  if(tipoSaida==="demissao_empresa_com_aviso") return addDays(fimAviso,-7);
+  if(tipoSaida==="pedido_com_aviso") return fimAviso;
+  return fimAviso;
+}
+
+/* ---------- Funcionários: helpers ---------- */
+function func(id){ return DB.funcionarios.find(f=>f.id===id); }
+function funcsAtivosNoMes(ym){
+  // ativos ou em aviso e ainda dentro do mês vigente
+  return DB.funcionarios.filter(f=>{
+    if(f.status==="inativo"){
+      // ainda aparece no mês da demissão
+      if(f.dataDemissao && f.dataDemissao.slice(0,7)===ym) return true;
+      if(f.ultimoDiaTrabalho && f.ultimoDiaTrabalho.slice(0,7)===ym) return true;
+      return false;
+    }
+    if(f.dataAdmissao && f.dataAdmissao.slice(0,7) > ym) return false; // admitido depois
+    return true;
+  });
+}
+function statusChip(f){
+  const map={ativo:"Ativo",aviso:"Em aviso",inativo:"Inativo"};
+  return `<span class="chip ${f.status}">${map[f.status]||f.status}</span>`;
+}
+function pagadorChip(p){ return `<span class="chip ${p==='BUDDY'?'buddy':'casana'}">${p}</span>`; }
+function contratoChip(t){ const m={CLT:"clt",PJ:"pj",AVULSO_MEI:"avulso"}; const l={CLT:"CLT",PJ:"PJ",AVULSO_MEI:"Avulso/MEI"}; return `<span class="chip ${m[t]||''}">${l[t]||t}</span>`; }
+
+window.addEventListener("DOMContentLoaded", init);
+
+/* ===========================================================================
+   INIT + ROUTER
+   =========================================================================== */
+function init(){
+  load();
+  MES = curMonth();
+  $("#mesVigente").value = MES;
+  // nav
+  document.querySelectorAll("#nav button").forEach(b=>{
+    b.onclick=()=>navigate(b.dataset.view);
+  });
+  navigate("dashGeral");
+}
+function onMesChange(){ MES = $("#mesVigente").value || curMonth(); render(); }
+
+const VIEW_TITLES = {
+  dashGeral:"Dashboard Geral", dashRh:"Dashboard RH / Financeiro",
+  funcionarios:"Cadastro de Funcionários", diarias:"Controle de Diárias",
+  pagamentos:"Pagamentos", encargos:"Folha de Encargos",
+  emails:"Geradores de E-mail", relatorios:"Relatórios", config:"Configurações"
+};
+function navigate(view){
+  CURRENT_VIEW = view;
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on", b.dataset.view===view));
+  $("#viewTitle").textContent = VIEW_TITLES[view]||"";
+  $("#shell").classList.remove("menu-open");
+  render();
+}
+function render(){
+  const c = $("#content");
+  const fn = { dashGeral:renderDashGeral, dashRh:renderDashRh, funcionarios:renderFuncionarios,
+    diarias:renderDiarias, pagamentos:renderPagamentos, encargos:renderEncargos,
+    emails:renderEmails, relatorios:renderRelatorios, config:renderConfig }[CURRENT_VIEW];
+  c.innerHTML = fn ? fn() : "";
+  if(fn && fn.after) fn.after();
+}
+
+/* modal helpers */
+function openModal(html){ const o=$("#overlay"); o.innerHTML=html; o.classList.add("on"); o.onclick=e=>{ if(e.target===o) closeModal(); }; }
+function closeModal(){ const o=$("#overlay"); o.classList.remove("on"); o.innerHTML=""; }
+
+/* ===========================================================================
+   DASHBOARD GERAL
+   =========================================================================== */
+function renderDashGeral(){
+  const ativos = DB.funcionarios.filter(f=>f.status==="ativo").length;
+  const emAviso = DB.funcionarios.filter(f=>f.status==="aviso").length;
+  const totalCad = DB.funcionarios.length;
+  const totalSaidas = DB.funcionarios.filter(f=>f.status==="inativo").length;
+  const admMes = DB.funcionarios.filter(f=>f.dataAdmissao && f.dataAdmissao.slice(0,7)===MES).length;
+  const demMes = DB.funcionarios.filter(f=>(f.dataDemissao||f.ultimoDiaTrabalho||"").slice(0,7)===MES).length;
+
+  // financeiro do mês
+  const pgs = DB.pagamentos[MES]||{};
+  let totalPago=0, totalPrev=0, buddy=0, casana=0;
+  funcsAtivosNoMes(MES).forEach(f=>{
+    const p = pagamentos(f, MES);
+    totalPrev += p.total;
+    if(p.pagoTotal) totalPago += p.pagoTotal;
+    if(f.pagador==="BUDDY") buddy += p.total; else casana += p.total;
+  });
+  const imp = (DB.impostos[MES]||[]);
+  const impTotal = imp.reduce((s,i)=>s+num(i.valor),0);
+  const impPago = imp.filter(i=>i.pago).reduce((s,i)=>s+num(i.valor),0);
+
+  return `
+  <div class="kpis">
+    <div class="kpi b-green"><span class="bar"></span><div class="lab">Funcionários ativos</div><div class="val">${ativos}</div><div class="sub">+ ${emAviso} em aviso</div></div>
+    <div class="kpi b-blue"><span class="bar"></span><div class="lab">Folha prevista (${mesLabel(MES)})</div><div class="val money">${money(totalPrev)}</div><div class="sub">${money(totalPago)} já pago</div></div>
+    <div class="kpi b-buddy"><span class="bar"></span><div class="lab">Buddy (mensal)</div><div class="val money">${money(buddy)}</div></div>
+    <div class="kpi b-casana"><span class="bar"></span><div class="lab">Casana (quinzenal)</div><div class="val money">${money(casana)}</div></div>
+    <div class="kpi b-amber"><span class="bar"></span><div class="lab">Impostos do mês</div><div class="val money">${money(impTotal)}</div><div class="sub">${money(impPago)} pago</div></div>
+  </div>
+  <div class="split">
+    <div class="card">
+      <div class="card-head"><h3>Movimentação de ${mesLabel(MES)}</h3></div>
+      <table>
+        <tr><td>Admitidos no mês</td><td class="num">${admMes}</td></tr>
+        <tr><td>Demitidos no mês</td><td class="num">${demMes}</td></tr>
+        <tr><td>Em aviso prévio</td><td class="num">${emAviso}</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Histórico da empresa</h3></div>
+      <table>
+        <tr><td>Total de funcionários cadastrados (até hoje)</td><td class="num">${totalCad}</td></tr>
+        <tr><td>Total de saídas (até hoje)</td><td class="num">${totalSaidas}</td></tr>
+        <tr><td>Quadro atual</td><td class="num">${ativos+emAviso}</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Atalhos</h3></div>
+    <div class="btn-row">
+      <button class="btn pri" onclick="navigate('funcionarios');setTimeout(abrirAdmissao,50)">＋ Admitir funcionário</button>
+      <button class="btn" onclick="navigate('pagamentos')">$ Lançar pagamentos</button>
+      <button class="btn" onclick="navigate('diarias')">▤ Lançar diárias</button>
+      <button class="btn" onclick="navigate('emails')">✉ Gerar e-mail p/ contabilidade</button>
+    </div>
+  </div>`;
+}
+
+/* ===========================================================================
+   DASHBOARD RH / FINANCEIRO
+   =========================================================================== */
+function renderDashRh(){
+  const ativos = DB.funcionarios.filter(f=>f.status==="ativo");
+  const emAviso = DB.funcionarios.filter(f=>f.status==="aviso");
+  const admMes = DB.funcionarios.filter(f=>f.dataAdmissao && f.dataAdmissao.slice(0,7)===MES);
+  const demMes = DB.funcionarios.filter(f=>(f.dataDemissao||f.ultimoDiaTrabalho||"").slice(0,7)===MES);
+
+  const avisoRows = emAviso.length ? emAviso.map(f=>`
+    <tr>
+      <td><b>${esc(f.nome)}</b> ${pagadorChip(f.pagador)}</td>
+      <td>${tipoSaidaLabel(f.tipoSaida)}</td>
+      <td>${fmtDate(f.inicioAviso)} → ${fmtDate(f.fimAviso)}</td>
+      <td><b style="color:var(--bad)">${fmtDate(f.ultimoDiaTrabalho)}</b></td>
+      <td>${fmtDate(f.fimAviso)}</td>
+      <td><button class="btn sm" onclick="abrirFuncionario('${f.id}')">Abrir</button></td>
+    </tr>`).join("") :
+    `<tr><td colspan="6" class="empty">Nenhum funcionário em aviso prévio.</td></tr>`;
+
+  return `
+  <div class="kpis">
+    <div class="kpi b-green"><span class="bar"></span><div class="lab">Funcionários ativos</div><div class="val">${ativos.length}</div></div>
+    <div class="kpi b-amber"><span class="bar"></span><div class="lab">Funcionários em aviso</div><div class="val">${emAviso.length}</div></div>
+    <div class="kpi b-blue"><span class="bar"></span><div class="lab">Admitidos em ${mesLabel(MES)}</div><div class="val">${admMes.length}</div></div>
+    <div class="kpi b-red"><span class="bar"></span><div class="lab">Demitidos em ${mesLabel(MES)}</div><div class="val">${demMes.length}</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>⚠ Funcionários em aviso prévio</h3><div class="spacer"></div>
+      <span class="hint">Último dia de aviso = solicitar documentos à contabilidade e enviar relatório de presença/faltas.</span></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Funcionário</th><th>Situação</th><th>Período do aviso</th><th>Último dia de trabalho</th><th>Último dia de aviso</th><th></th></tr></thead>
+      <tbody>${avisoRows}</tbody>
+    </table></div>
+    <div class="warn-box" style="margin-top:12px">
+      <b>Regra do cálculo:</b> em <b>demissão pela empresa</b> com aviso trabalhado, o último dia de trabalho = último dia do aviso − 7 dias corridos (direito do funcionário).
+      Em <b>pedido de demissão</b>, o funcionário cumpre os 30 dias integralmente.
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="card">
+      <div class="card-head"><h3>Admitidos no mês</h3></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Nome</th><th>Cargo</th><th>Admissão</th></tr></thead><tbody>
+        ${admMes.length?admMes.map(f=>`<tr><td>${esc(f.nome)}</td><td>${esc(f.cargo)}</td><td>${fmtDate(f.dataAdmissao)}</td></tr>`).join(""):`<tr><td colspan="3" class="empty">—</td></tr>`}
+      </tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Demitidos no mês</h3></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Nome</th><th>Situação</th><th>Últ. dia</th></tr></thead><tbody>
+        ${demMes.length?demMes.map(f=>`<tr><td>${esc(f.nome)}</td><td>${tipoSaidaLabel(f.tipoSaida)}</td><td>${fmtDate(f.ultimoDiaTrabalho||f.dataDemissao)}</td></tr>`).join(""):`<tr><td colspan="3" class="empty">—</td></tr>`}
+      </tbody></table></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>Totais consolidados</h3></div>
+    <table>
+      <tr><td>Total de funcionários cadastrados na empresa (até hoje)</td><td class="num">${DB.funcionarios.length}</td></tr>
+      <tr><td>Total de saídas (até hoje)</td><td class="num">${DB.funcionarios.filter(f=>f.status==='inativo').length}</td></tr>
+    </table>
+  </div>`;
+}
+function tipoSaidaLabel(t){
+  return {demissao_empresa_com_aviso:"Demissão empresa · c/ aviso",
+    demissao_empresa_sem_aviso:"Demissão empresa · sem aviso (indenizado)",
+    pedido_com_aviso:"Pedido · c/ aviso",
+    pedido_sem_aviso:"Pedido · sem aviso"}[t]||"—";
+}
+
+/* ===========================================================================
+   CADASTRO DE FUNCIONÁRIOS
+   =========================================================================== */
+let FUNC_FILTER = { q:"", pagador:"", status:"", contrato:"" };
+function renderFuncionarios(){
+  let list = DB.funcionarios.slice();
+  if(FUNC_FILTER.q){ const q=FUNC_FILTER.q.toLowerCase(); list=list.filter(f=>(f.nome+f.apelido+f.cargo+f.idContab).toLowerCase().includes(q)); }
+  if(FUNC_FILTER.pagador) list=list.filter(f=>f.pagador===FUNC_FILTER.pagador);
+  if(FUNC_FILTER.status) list=list.filter(f=>f.status===FUNC_FILTER.status);
+  if(FUNC_FILTER.contrato) list=list.filter(f=>f.tipoContrato===FUNC_FILTER.contrato);
+  // ordenar por ID contábil (num) e depois alfabética
+  list.sort((a,b)=>{ const na=parseInt(a.idContab)||9999, nb=parseInt(b.idContab)||9999; return na-nb || a.nome.localeCompare(b.nome,"pt"); });
+
+  const rows = list.length ? list.map(f=>`
+    <tr>
+      <td class="num">${esc(f.idContab||"—")}</td>
+      <td><b>${esc(f.nome)}</b>${f.apelido?` <span class="soft">(${esc(f.apelido)})</span>`:""}<div class="soft" style="font-size:11px">${esc(f.cpfCnpj||"")}</div></td>
+      <td>${esc(f.cargo||"—")}</td>
+      <td>${contratoChip(f.tipoContrato)}</td>
+      <td>${pagadorChip(f.pagador)}</td>
+      <td class="num">${money(f.salarioFixo)}</td>
+      <td>${statusChip(f)}</td>
+      <td>${fmtDate(f.dataAdmissao)}</td>
+      <td class="no-print">
+        <div class="btn-row" style="gap:5px;flex-wrap:nowrap">
+          <button class="btn sm" onclick="abrirFuncionario('${f.id}')">Editar</button>
+          <button class="btn sm" onclick="abrirChecklist('${f.id}')" title="Checklist de documentação">☑</button>
+          ${f.status!=="inativo"?`<button class="btn sm danger" onclick="abrirDemissao('${f.id}')" title="Demitir / aviso">Saída</button>`:""}
+        </div>
+      </td>
+    </tr>`).join("") : `<tr><td colspan="9" class="empty">Nenhum funcionário. Clique em “Admitir funcionário”.</td></tr>`;
+
+  return `
+  <div class="card">
+    <div class="card-head">
+      <h3>Funcionários (${list.length})</h3><div class="spacer"></div>
+      <button class="btn pri" onclick="abrirAdmissao()">＋ Admitir funcionário</button>
+      <button class="btn" onclick="exportarFuncionariosXLSX()">⬇ Excel</button>
+    </div>
+    <div class="btn-row" style="margin-bottom:14px">
+      <input style="max-width:240px" placeholder="Buscar nome, apelido, cargo, ID…" value="${esc(FUNC_FILTER.q)}" oninput="FUNC_FILTER.q=this.value;render()">
+      <select style="max-width:150px" onchange="FUNC_FILTER.pagador=this.value;render()">
+        <option value="">Todos pagadores</option><option ${FUNC_FILTER.pagador==='BUDDY'?'selected':''}>BUDDY</option><option ${FUNC_FILTER.pagador==='CASANA'?'selected':''}>CASANA</option>
+      </select>
+      <select style="max-width:160px" onchange="FUNC_FILTER.contrato=this.value;render()">
+        <option value="">Todos contratos</option>
+        <option value="CLT" ${FUNC_FILTER.contrato==='CLT'?'selected':''}>CLT</option>
+        <option value="PJ" ${FUNC_FILTER.contrato==='PJ'?'selected':''}>PJ (NF)</option>
+        <option value="AVULSO_MEI" ${FUNC_FILTER.contrato==='AVULSO_MEI'?'selected':''}>Avulso / MEI</option>
+      </select>
+      <select style="max-width:140px" onchange="FUNC_FILTER.status=this.value;render()">
+        <option value="">Todos status</option>
+        <option value="ativo" ${FUNC_FILTER.status==='ativo'?'selected':''}>Ativo</option>
+        <option value="aviso" ${FUNC_FILTER.status==='aviso'?'selected':''}>Em aviso</option>
+        <option value="inativo" ${FUNC_FILTER.status==='inativo'?'selected':''}>Inativo</option>
+      </select>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th class="num">ID</th><th>Funcionário</th><th>Cargo</th><th>Contrato</th><th>Pagador</th><th class="num">Salário</th><th>Status</th><th>Admissão</th><th class="no-print"></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
+}
+
+function emptyFunc(){ return {
+  id:uid(), idContab:"", nome:"", apelido:"", cargo:"",
+  tipoContrato:"CLT", salarioFixo:0, pagador:"CASANA",
+  cpfCnpj:"", tipoPix:"CPF", chavePix:"",
+  dataAdmissao:todayISO(), recebeSalarioFamilia:false,
+  status:"ativo",
+  // avulso/mei
+  formaAvulso:"recibo", periodicidade:"mensal",
+  // saída
+  tipoSaida:null, dataPedido:"", inicioAviso:"", fimAviso:"", ultimoDiaTrabalho:"", dataDemissao:"",
+  cumpreAviso:true,
+  observacoes:"",
+  checklistDocs:{}, checklistAdmissao:{}, checklistRescisao:{},
+  historicoSalarios:[]
+}; }
+
+function abrirAdmissao(){ formFuncionario(emptyFunc(), true); }
+function abrirFuncionario(id){ const f=func(id); if(f) formFuncionario(JSON.parse(JSON.stringify(f)), false); }
+
+function formFuncionario(f, isNew){
+  const sel=(v,o)=>v===o?"selected":"";
+  openModal(`
+  <div class="modal wide">
+    <div class="modal-head"><h3>${isNew?"Admissão de funcionário":"Editar funcionário"}</h3><div class="spacer"></div><button class="x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body" id="ffBody">
+      <div class="section-lab">Identificação</div>
+      <div class="g3">
+        <div class="field"><label>ID (nº da folha da contabilidade)</label><input id="f_idContab" value="${esc(f.idContab)}" placeholder="ex: 014"></div>
+        <div class="field span2"><label>Nome completo</label><input id="f_nome" value="${esc(f.nome)}"></div>
+        <div class="field"><label>Apelido</label><input id="f_apelido" value="${esc(f.apelido)}"></div>
+        <div class="field"><label>Cargo / função</label><input id="f_cargo" value="${esc(f.cargo)}" placeholder="ex: Ajudante"></div>
+        <div class="field"><label>Tipo de contrato</label>
+          <select id="f_tipoContrato" onchange="toggleAvulso()">
+            <option value="CLT" ${sel(f.tipoContrato,'CLT')}>CLT</option>
+            <option value="PJ" ${sel(f.tipoContrato,'PJ')}>PJ — emite NF</option>
+            <option value="AVULSO_MEI" ${sel(f.tipoContrato,'AVULSO_MEI')}>Avulso / MEI</option>
+          </select></div>
+      </div>
+
+      <div class="section-lab">Pagamento</div>
+      <div class="g3">
+        <div class="field"><label>Pagador</label>
+          <select id="f_pagador" onchange="onPagadorChange()">
+            <option value="CASANA" ${sel(f.pagador,'CASANA')}>CASANA (quinzenal)</option>
+            <option value="BUDDY" ${sel(f.pagador,'BUDDY')}>BUDDY (mensal)</option>
+          </select></div>
+        <div class="field span2"><label>Empresa / CNPJ vinculado</label><input id="f_empresaInfo" value="${esc(EMPRESAS[f.pagador].razao+' — '+EMPRESAS[f.pagador].cnpj)}" readonly></div>
+        <div class="field"><label>Salário fixo (fechado em folha)</label><input id="f_salario" value="${f.salarioFixo?money(f.salarioFixo).replace('R$\u00a0',''):''}" placeholder="0,00" oninput="this.value=this.value"></div>
+        <div class="field"><label>CPF ou CNPJ</label><input id="f_cpfCnpj" value="${esc(f.cpfCnpj)}"></div>
+        <div class="field"><label>Tipo de chave PIX</label>
+          <select id="f_tipoPix">${["CNPJ","CPF","Telefone","E-mail","Aleatória"].map(o=>`<option ${sel(f.tipoPix,o)}>${o}</option>`).join("")}</select></div>
+        <div class="field span2"><label>Chave PIX</label><input id="f_chavePix" value="${esc(f.chavePix)}"></div>
+        <div class="field"><label>Recebe salário-família?</label>
+          <select id="f_salFamilia"><option value="" ${f.recebeSalarioFamilia?'':'selected'}>Não</option><option value="1" ${f.recebeSalarioFamilia?'selected':''}>Sim (ajudante c/ filhos &lt;14)</option></select></div>
+      </div>
+
+      <div id="avulsoBox" style="display:${f.tipoContrato==='AVULSO_MEI'?'block':'none'}">
+        <div class="warn-box" style="margin-bottom:12px">Funcionário avulso/MEI: entra na folha de encargos apenas com o <b>líquido pago direto</b>. Recibo à espécie ou prestador MEI (NF).</div>
+        <div class="g2">
+          <div class="field"><label>Forma</label><select id="f_formaAvulso"><option value="recibo" ${sel(f.formaAvulso,'recibo')}>Recibo / espécie</option><option value="mei" ${sel(f.formaAvulso,'mei')}>MEI — emite NF</option></select></div>
+          <div class="field"><label>Periodicidade</label><select id="f_periodicidade"><option value="mensal" ${sel(f.periodicidade,'mensal')}>Mensal</option><option value="diaria" ${sel(f.periodicidade,'diaria')}>Diária</option></select></div>
+        </div>
+      </div>
+
+      <div class="section-lab">Datas</div>
+      <div class="g3">
+        <div class="field"><label>Data de admissão</label><input type="date" id="f_admissao" value="${f.dataAdmissao}"></div>
+        <div class="field"><label>Tempo trabalhado</label><input value="${tempoTrabalhado(f.dataAdmissao, f.ultimoDiaTrabalho||f.dataDemissao)}" readonly></div>
+        <div class="field"><label>Status</label><input value="${ {ativo:'Ativo',aviso:'Em aviso',inativo:'Inativo'}[f.status] }" readonly></div>
+      </div>
+      ${f.status!=='ativo'? `<div class="note-box">Situação de saída: <b>${tipoSaidaLabel(f.tipoSaida)}</b> · último dia de trabalho <b>${fmtDate(f.ultimoDiaTrabalho||f.dataDemissao)}</b>. Use o botão “Saída” na lista para alterar.</div>`:""}
+
+      <div class="section-lab">Histórico salarial</div>
+      <div id="histSal">${renderHistSal(f)}</div>
+      <button class="btn sm" onclick="addAumento('${f.id}')" style="margin-top:8px">＋ Registrar aumento salarial</button>
+
+      <div class="section-lab">Observações</div>
+      <div class="field"><textarea id="f_obs" placeholder="Anotações livres (quinzenas já pagas, deduções, etc.)">${esc(f.observacoes)}</textarea></div>
+    </div>
+    <div class="modal-foot">
+      ${isNew?`<span class="hint" style="margin-right:auto">Checklist de documentação fica disponível após salvar.</span>`:`<button class="btn" onclick="abrirChecklist('${f.id}')" style="margin-right:auto">☑ Checklist de documentação</button>`}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn pri" onclick="salvarFuncionario('${f.id}', ${isNew})">${isNew?"Admitir e salvar":"Salvar alterações"}</button>
+    </div>
+  </div>`);
+  window._editF = f;
+}
+function renderHistSal(f){
+  if(!f.historicoSalarios||!f.historicoSalarios.length) return `<div class="hint">Sem aumentos registrados.</div>`;
+  return `<div class="tbl-wrap"><table><thead><tr><th>Data</th><th class="num">De</th><th class="num">Para</th></tr></thead><tbody>${
+    f.historicoSalarios.map(h=>`<tr><td>${fmtDate(h.data)}</td><td class="num">${money(h.de)}</td><td class="num">${money(h.para)}</td></tr>`).join("")
+  }</tbody></table></div>`;
+}
+function toggleAvulso(){ const v=$("#f_tipoContrato").value; $("#avulsoBox").style.display = v==='AVULSO_MEI'?'block':'none'; }
+function onPagadorChange(){ const p=$("#f_pagador").value; $("#f_empresaInfo").value = EMPRESAS[p].razao+" — "+EMPRESAS[p].cnpj; }
+
+function salvarFuncionario(id, isNew){
+  const f = isNew ? emptyFunc() : func(id) || emptyFunc();
+  f.id = id;
+  f.idContab = $("#f_idContab").value.trim();
+  f.nome = $("#f_nome").value.trim();
+  f.apelido = $("#f_apelido").value.trim();
+  f.cargo = $("#f_cargo").value.trim();
+  f.tipoContrato = $("#f_tipoContrato").value;
+  f.pagador = $("#f_pagador").value;
+  f.salarioFixo = num($("#f_salario").value);
+  f.cpfCnpj = $("#f_cpfCnpj").value.trim();
+  f.tipoPix = $("#f_tipoPix").value;
+  f.chavePix = $("#f_chavePix").value.trim();
+  f.recebeSalarioFamilia = $("#f_salFamilia").value==="1";
+  f.dataAdmissao = $("#f_admissao").value;
+  f.observacoes = $("#f_obs").value;
+  if(f.tipoContrato==="AVULSO_MEI"){ f.formaAvulso=$("#f_formaAvulso").value; f.periodicidade=$("#f_periodicidade").value; }
+  if(!f.nome){ toast("Informe o nome do funcionário."); return; }
+  if(isNew){ DB.funcionarios.push(f); }
+  save(); closeModal(); toast(isNew?"Funcionário admitido.":"Alterações salvas."); render();
+}
+
+function addAumento(id){
+  const f = window._editF;
+  const atual = num($("#f_salario").value);
+  const novo = prompt(`Salário atual: ${money(atual)}\nNovo salário (em folha):`, "");
+  if(novo===null) return;
+  const v = num(novo); if(!v){ toast("Valor inválido."); return; }
+  f.historicoSalarios = f.historicoSalarios||[];
+  f.historicoSalarios.unshift({data:todayISO(), de:atual, para:v});
+  $("#f_salario").value = money(v).replace("R$\u00a0","");
+  $("#histSal").innerHTML = renderHistSal(f);
+  toast("Aumento registrado — lembre de gerar o e-mail de aumento na aba E-mails.");
+}
+
+/* ---------- Fluxo de demissão / aviso prévio ---------- */
+function abrirDemissao(id){
+  const f = func(id); if(!f) return;
+  const sel=(v,o)=>v===o?"selected":"";
+  openModal(`
+  <div class="modal">
+    <div class="modal-head"><h3>Saída — ${esc(f.nome)}</h3><div class="spacer"></div><button class="x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Tipo de saída</label>
+        <select id="d_tipo" onchange="onTipoSaida()">
+          <option value="">Selecione…</option>
+          <option value="pedido_com_aviso" ${sel(f.tipoSaida,'pedido_com_aviso')}>Pedido de demissão — COM aviso prévio (cumpre 30 dias)</option>
+          <option value="pedido_sem_aviso" ${sel(f.tipoSaida,'pedido_sem_aviso')}>Pedido de demissão — SEM aviso</option>
+          <option value="demissao_empresa_com_aviso" ${sel(f.tipoSaida,'demissao_empresa_com_aviso')}>Demissão pela empresa — COM aviso trabalhado</option>
+          <option value="demissao_empresa_sem_aviso" ${sel(f.tipoSaida,'demissao_empresa_sem_aviso')}>Demissão pela empresa — SEM aviso (indenizado)</option>
+        </select></div>
+
+      <div id="comAvisoBox" style="display:none">
+        <div class="g2">
+          <div class="field"><label>Início do aviso prévio</label><input type="date" id="d_inicio" value="${f.inicioAviso}" onchange="calcSaida()"></div>
+          <div class="field"><label>Fim do aviso prévio</label><input type="date" id="d_fim" value="${f.fimAviso}" onchange="calcSaida()"></div>
+        </div>
+        <div class="note-box" id="d_calc">—</div>
+      </div>
+      <div id="semAvisoBox" style="display:none">
+        <div class="field"><label>Último dia trabalhado / data da demissão</label><input type="date" id="d_demissao" value="${f.dataDemissao||todayISO()}"></div>
+      </div>
+
+      <div class="field"><label>Data do pedido / comunicação</label><input type="date" id="d_pedido" value="${f.dataPedido||todayISO()}"></div>
+      <div class="field"><label>Observações (valores já pagos de quinzenas, deduções, etc.)</label><textarea id="d_obs" placeholder="Ex: 1ª quinzena de R$ 1.000,00 já paga; deduzir vale de R$ 150,00…">${esc(f.observacoes)}</textarea></div>
+
+      <div class="warn-box">Ao confirmar, o funcionário fica <b>Em aviso</b> (se houver aviso) ou <b>Inativo</b>. Ele permanece no controle de diárias e pagamentos do mês vigente. No mês seguinte, marque como concluído para sair do preenchimento.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="navigate('emails');setTimeout(()=>selecionarEmailFunc('${f.id}'),60)">✉ Gerar e-mail de demissão</button>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn danger" onclick="confirmarSaida('${f.id}')">Confirmar saída</button>
+    </div>
+  </div>`);
+  setTimeout(()=>{ if(f.tipoSaida){ $("#d_tipo").value=f.tipoSaida; onTipoSaida(); } },20);
+}
+function onTipoSaida(){
+  const t=$("#d_tipo").value;
+  const com = t==="pedido_com_aviso"||t==="demissao_empresa_com_aviso";
+  $("#comAvisoBox").style.display = com?"block":"none";
+  $("#semAvisoBox").style.display = (t&&!com)?"block":"none";
+  if(com) calcSaida();
+}
+function calcSaida(){
+  const t=$("#d_tipo").value, ini=$("#d_inicio").value, fim=$("#d_fim").value;
+  if(!fim){ $("#d_calc").innerHTML="Informe o fim do aviso."; return; }
+  const ult = calcUltimoDiaTrabalho(t, fim);
+  if(t==="demissao_empresa_com_aviso"){
+    $("#d_calc").innerHTML = `Último dia de <b>aviso</b>: ${fmtDate(fim)} · Último dia de <b>trabalho</b>: <b style="color:var(--bad)">${fmtDate(ult)}</b> (−7 dias corridos, direito do funcionário).<br><small>No último dia de aviso, solicitar documentos à contabilidade e enviar relatório de presença/faltas.</small>`;
+  } else {
+    $("#d_calc").innerHTML = `Pedido de demissão: cumpre o aviso integral. Último dia de trabalho = <b>${fmtDate(ult)}</b>.`;
+  }
+}
+function confirmarSaida(id){
+  const f=func(id); if(!f) return;
+  const t=$("#d_tipo").value;
+  if(!t){ toast("Selecione o tipo de saída."); return; }
+  f.tipoSaida=t; f.dataPedido=$("#d_pedido").value; f.observacoes=$("#d_obs").value;
+  const com = t==="pedido_com_aviso"||t==="demissao_empresa_com_aviso";
+  if(com){
+    f.inicioAviso=$("#d_inicio").value; f.fimAviso=$("#d_fim").value;
+    f.ultimoDiaTrabalho=calcUltimoDiaTrabalho(t,f.fimAviso);
+    f.dataDemissao=f.fimAviso;
+    f.status="aviso"; f.cumpreAviso=true;
+  } else {
+    f.dataDemissao=$("#d_demissao").value; f.ultimoDiaTrabalho=f.dataDemissao;
+    f.inicioAviso=""; f.fimAviso=""; f.status="inativo"; f.cumpreAviso=false;
+  }
+  save(); closeModal(); toast("Saída registrada."); render();
+}
+
+/* ---------- Checklist de documentação / admissão ---------- */
+function abrirChecklist(id){
+  const f=func(id); if(!f) return;
+  f.checklistDocs = f.checklistDocs||{};
+  const docs = DOCS_ADMISSAO.map(d=>`
+    <label class="ci ${f.checklistDocs[d.k]?'done':''}">
+      <input type="checkbox" ${f.checklistDocs[d.k]?'checked':''} onchange="toggleDoc('${id}','${d.k}',this.checked,this)">
+      <span class="t"><b>${d.t}</b>${d.obs?`<small>${d.obs}</small>`:""}</span>
+    </label>`).join("");
+  openModal(`
+  <div class="modal wide">
+    <div class="modal-head"><h3>Documentação — ${esc(f.nome)}</h3><div class="spacer"></div><button class="x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="split">
+        <div>
+          <div class="section-lab">Checklist de documentos para admissão</div>
+          <div class="checklist">${docs}</div>
+          <div class="btn-row" style="margin-top:14px">
+            <button class="btn pri" onclick="gerarMsgDocumentos('${id}')">✉ Gerar mensagem p/ funcionário</button>
+            <button class="btn" onclick="imprimirChecklist('${id}')">🖶 Imprimir / PDF</button>
+          </div>
+        </div>
+        <div>
+          <div class="section-lab">Fluxo de admissão (IANNA)</div>
+          <div class="steps">
+            ${[
+              "MANOEL/MANUEL capta o funcionário e ele já inicia o trabalho.",
+              "IANNA contata o funcionário e envia o checklist de documentos.",
+              "Recebe os documentos, escaneia e anexa na pasta do Drive.",
+              "Cadastra o funcionário neste sistema.",
+              "Gera o e-mail de admissão e envia para a contabilidade.",
+              "Recebe os documentos da contabilidade, baixa, salva no Drive e imprime.",
+              "Funcionário e Manuel assinam; IANNA escaneia e salva os assinados.",
+              "Responde o mesmo e-mail à contabilidade com os documentos assinados. Funcionário admitido."
+            ].map((t,i)=>`<div class="st"><div class="n">${i+1}</div><div class="tx">${t}</div></div>`).join("")}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">Fechar</button></div>
+  </div>`);
+}
+function toggleDoc(id,k,v,el){ const f=func(id); f.checklistDocs[k]=v; el.closest(".ci").classList.toggle("done",v); save(); }
+function gerarMsgDocumentos(id){
+  const f=func(id);
+  const ehAjudante = (f.cargo||"").toLowerCase().includes("ajudante");
+  const itens = DOCS_ADMISSAO.filter(d=> d.k!=="filhos" || ehAjudante)
+    .map(d=> `• ${d.t}${d.obs?` (${d.obs})`:""}`).join("\n");
+  const msg = `Olá${f.apelido?", "+f.apelido:""}! Seja bem-vindo(a) à equipe. 🙌\n\nPara concluir sua admissão, precisamos dos seguintes documentos (foto legível ou PDF):\n\n${itens}\n\nPode nos enviar por aqui assim que possível. Qualquer dúvida, estamos à disposição!`;
+  copiarTexto(msg, "Mensagem copiada — cole no WhatsApp do funcionário.");
+}
+function imprimirChecklist(id){
+  const f=func(id);
+  const ehAjudante=(f.cargo||"").toLowerCase().includes("ajudante");
+  const w=window.open("","_blank");
+  w.document.write(`<html><head><title>Checklist - ${esc(f.nome)}</title><style>body{font-family:Arial;padding:30px;color:#111}h2{margin:0}li{margin:7px 0;font-size:15px}small{color:#666}</style></head><body>
+    <h2>Checklist de documentação — Admissão</h2><p><b>${esc(f.nome)}</b> · ${esc(f.cargo||"")}</p><ul>
+    ${DOCS_ADMISSAO.filter(d=>d.k!=="filhos"||ehAjudante).map(d=>`<li>☐ ${d.t} ${d.obs?`<small>(${d.obs})</small>`:""}</li>`).join("")}
+    </ul></body></html>`);
+  w.document.close(); w.print();
+}
+
+/* ===========================================================================
+   CONTROLE DE DIÁRIAS (presença / falta / falta justificada)
+   =========================================================================== */
+const DIA_CICLO = { "":"P", "P":"F", "F":"J", "J":"" }; // clique cicla
+function renderDiarias(){
+  const [y,m]=MES.split("-").map(Number);
+  const ndias=new Date(y,m,0).getDate();
+  const funcs=funcsAtivosNoMes(MES).sort((a,b)=>(parseInt(a.idContab)||9999)-(parseInt(b.idContab)||9999)||a.nome.localeCompare(b.nome));
+  DB.diarias[MES]=DB.diarias[MES]||{};
+  const head=["<th class='namecol'>Funcionário</th>"];
+  for(let d=1;d<=ndias;d++){ const dt=new Date(y,m-1,d); const wknd=(dt.getDay()===0||dt.getDay()===6); head.push(`<th class="day ${wknd?'wknd':''}">${String(d).padStart(2,"0")}<br><span style="color:var(--soft);font-weight:400">${["D","S","T","Q","Q","S","S"][dt.getDay()]}</span></th>`); }
+  head.push("<th class='num'>P</th><th class='num'>F</th><th class='num'>J</th>");
+
+  const rows = funcs.length? funcs.map(f=>{
+    DB.diarias[MES][f.id]=DB.diarias[MES][f.id]||{};
+    const reg=DB.diarias[MES][f.id];
+    let p=0,fa=0,j=0;
+    const cells=[];
+    for(let d=1;d<=ndias;d++){
+      const key=String(d).padStart(2,"0"); const v=reg[key]||"";
+      if(v==="P")p++; if(v==="F")fa++; if(v==="J")j++;
+      const dt=new Date(y,m-1,d); const wknd=(dt.getDay()===0||dt.getDay()===6);
+      cells.push(`<td class="day ${wknd?'wknd':''}"><div class="dcell ${v}" onclick="cicloDiaria('${f.id}','${key}',this)">${v}</div></td>`);
+    }
+    return `<tr><td class="namecol">${esc(f.nome)} ${pagadorChip(f.pagador)}</td>${cells.join("")}<td class="num">${p}</td><td class="num" style="color:var(--bad)">${fa}</td><td class="num" style="color:var(--warn)">${j}</td></tr>`;
+  }).join("") : `<tr><td class="empty" colspan="${ndias+4}">Nenhum funcionário ativo neste mês.</td></tr>`;
+
+  return `
+  <div class="card">
+    <div class="card-head"><h3>Diárias — ${mesLabel(MES)}</h3><div class="spacer"></div>
+      <span class="hint">Clique na célula: vazio → <b style="color:var(--ok)">P</b> → <b style="color:var(--bad)">F</b> → <b style="color:var(--warn)">J</b> → vazio</span>
+      <button class="btn" onclick="exportarDiariasXLSX()">⬇ Excel</button>
+    </div>
+    <div class="hint" style="margin-bottom:12px">P = presença · F = falta · J = falta justificada (atestado). Preenchido pelo vigia/porteiro; relatório só com IANNA. Justificada exige atestado salvo na pasta.</div>
+    <div class="diarias-grid"><table>
+      <thead><tr>${head.join("")}</tr></thead><tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
+}
+function cicloDiaria(fid,key,el){
+  DB.diarias[MES]=DB.diarias[MES]||{}; DB.diarias[MES][fid]=DB.diarias[MES][fid]||{};
+  const cur=DB.diarias[MES][fid][key]||"";
+  const next=DIA_CICLO[cur];
+  if(next) DB.diarias[MES][fid][key]=next; else delete DB.diarias[MES][fid][key];
+  el.className="dcell "+next; el.textContent=next;
+  save();
+  // atualiza contadores da linha
+  const tr=el.closest("tr"); const tds=tr.querySelectorAll("td.num");
+  const reg=DB.diarias[MES][fid]; let p=0,fa=0,j=0; Object.values(reg).forEach(v=>{if(v==="P")p++;if(v==="F")fa++;if(v==="J")j++;});
+  tds[0].textContent=p; tds[1].textContent=fa; tds[2].textContent=j;
+}
+function faltasDoMes(fid, ym){
+  const reg=(DB.diarias[ym]||{})[fid]||{};
+  const f=[], j=[];
+  Object.keys(reg).sort().forEach(k=>{ if(reg[k]==="F")f.push(k); if(reg[k]==="J")j.push(k); });
+  return {faltas:f, justificadas:j};
+}
+function relatorioFaltasTexto(fid, ym){
+  const {faltas,justificadas}=faltasDoMes(fid,ym);
+  const fmt=arr=>arr.map(d=>d+"/"+ym.split("-")[1]).join(", ");
+  let s=`Relatório de presença/faltas de ${mesLabel(ym)}: `;
+  if(!faltas.length && !justificadas.length){ s+="o funcionário não teve faltas no período."; }
+  else{
+    const parts=[];
+    if(faltas.length) parts.push(`${faltas.length} falta(s) (dias ${fmt(faltas)})`);
+    if(justificadas.length) parts.push(`${justificadas.length} falta(s) justificada(s) por atestado (dias ${fmt(justificadas)})`);
+    s+=parts.join(" e ")+".";
+  }
+  return s;
+}
+
+/* ===========================================================================
+   PAGAMENTOS  (CASANA quinzenal · BUDDY mensal) + IMPOSTOS
+   =========================================================================== */
+/* cálculo de valores sugeridos por funcionário no mês */
+function pagamentos(f, ym){
+  DB.pagamentos[ym]=DB.pagamentos[ym]||{};
+  const reg=DB.pagamentos[ym][f.id]=DB.pagamentos[ym][f.id]||{};
+  const out={ tipo:f.pagador==="CASANA"?"quinzenal":"mensal", total:0, pagoTotal:0, partes:[] };
+  if(f.pagador==="CASANA"){
+    const q1 = reg.q1 || {};
+    const q2 = reg.q2 || {};
+    const liquido = reg.liquido!=null && reg.liquido!=="" ? num(reg.liquido) : null;
+    const v1 = q1.v!=null && q1.v!=="" ? num(q1.v) : (f.salarioFixo/2);
+    const v2 = q2.v!=null && q2.v!=="" ? num(q2.v) : ((liquido!=null?liquido:f.salarioFixo) - v1);
+    out.partes=[
+      {chave:"q1", label:"1ª quinzena", data:dataQuinzena1(ym), valor:v1, pago:!!q1.pago, dataPg:q1.data},
+      {chave:"q2", label:"2ª quinzena", data:dataQuinzena2(ym), valor:v2, pago:!!q2.pago, dataPg:q2.data}
+    ];
+  } else {
+    const ms = reg.mensal||{};
+    const desc = num(reg.desconto||0);
+    const v = ms.v!=null && ms.v!=="" ? num(ms.v) : (f.salarioFixo - desc);
+    out.partes=[{chave:"mensal", label:"Mensal", data:dataMensal(ym), valor:v, pago:!!ms.pago, dataPg:ms.data}];
+  }
+  out.total=out.partes.reduce((s,p)=>s+p.valor,0);
+  out.pagoTotal=out.partes.filter(p=>p.pago).reduce((s,p)=>s+p.valor,0);
+  return out;
+}
+let PG_TAB="quinzena";
+function renderPagamentos(){
+  return `
+  <div class="subtabs">
+    <button class="${PG_TAB==='quinzena'?'on':''}" onclick="PG_TAB='quinzena';render()">Quinzenas (Casana)</button>
+    <button class="${PG_TAB==='mensal'?'on':''}" onclick="PG_TAB='mensal';render()">Mensal (Buddy)</button>
+    <button class="${PG_TAB==='impostos'?'on':''}" onclick="PG_TAB='impostos';render()">Impostos do mês</button>
+  </div>
+  ${PG_TAB==='impostos'?renderImpostos():renderListaPagamentos(PG_TAB)}`;
+}
+function renderListaPagamentos(tab){
+  const pagador = tab==="quinzena"?"CASANA":"BUDDY";
+  const emp=EMPRESAS[pagador];
+  const funcs=funcsAtivosNoMes(MES).filter(f=>f.pagador===pagador).sort((a,b)=>(parseInt(a.idContab)||9999)-(parseInt(b.idContab)||9999)||a.nome.localeCompare(b.nome));
+  let total=0,pago=0;
+  const blocks = funcs.length? funcs.map(f=>{
+    const p=pagamentos(f,MES); total+=p.total; pago+=p.pagoTotal;
+    const reg=DB.pagamentos[MES][f.id];
+    const partes=p.partes.map(pt=>`
+      <tr>
+        <td>${pt.label}<div class="soft" style="font-size:11px">vencimento ${fmtDate(pt.data)}</div></td>
+        <td class="num"><input style="max-width:130px;text-align:right" value="${money(pt.valor).replace('R$\u00a0','')}" onchange="setValorPg('${f.id}','${pt.chave}',this.value)"></td>
+        <td>${pt.pago?`<span class="chip pago">Pago ${pt.dataPg?fmtDate(pt.dataPg):''}</span>`:`<span class="chip pend">Pendente</span>`}</td>
+        <td class="no-print"><button class="btn sm ${pt.pago?'':'ok'}" onclick="togglePago('${f.id}','${pt.chave}')">${pt.pago?'Desfazer':'Marcar pago'}</button></td>
+      </tr>`).join("");
+    const liqRow = pagador==="CASANA" ? `<tr><td>Líquido da contabilidade (2ª qz)</td><td class="num"><input style="max-width:130px;text-align:right" placeholder="opcional" value="${reg&&reg.liquido?money(reg.liquido).replace('R$\u00a0',''):''}" onchange="setLiquido('${f.id}',this.value)"></td><td colspan="2" class="hint">2ª quinzena = líquido − 1ª quinzena</td></tr>`
+      : `<tr><td>Desconto manual</td><td class="num"><input style="max-width:130px;text-align:right" placeholder="0,00" value="${reg&&reg.desconto?money(reg.desconto).replace('R$\u00a0',''):''}" onchange="setDesconto('${f.id}',this.value)"></td><td colspan="2" class="hint">Mensal = salário fixo − desconto</td></tr>`;
+    return `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-head">
+        <h3>${esc(f.nome)}</h3> ${pagadorChip(f.pagador)} ${contratoChip(f.tipoContrato)}
+        <div class="spacer"></div>
+        <span class="hint">${f.tipoPix}: <b>${esc(f.chavePix||"—")}</b></span>
+      </div>
+      <table>${partes}${liqRow}</table>
+      <div class="hint" style="margin-top:8px">Salário cadastrado: ${money(f.salarioFixo)} · Pagar pela conta ${emp.razao} (${emp.cnpj}). Salvar comprovante na pasta do Drive (${pagador} · ${mesLabel(MES)}).</div>
+    </div>`;
+  }).join("") : `<div class="card"><div class="empty">Nenhum funcionário com pagador ${pagador} ativo em ${mesLabel(MES)}.</div></div>`;
+
+  return `
+  <div class="kpis">
+    <div class="kpi ${pagador==='BUDDY'?'b-buddy':'b-casana'}"><span class="bar"></span><div class="lab">Empresa pagadora</div><div class="val" style="font-size:15px;line-height:1.3">${pagador}</div><div class="sub">${emp.razao}<br>${emp.cnpj}</div></div>
+    <div class="kpi b-blue"><span class="bar"></span><div class="lab">Total ${tab==='quinzena'?'quinzenas':'mensal'}</div><div class="val money">${money(total)}</div></div>
+    <div class="kpi b-green"><span class="bar"></span><div class="lab">Já pago</div><div class="val money">${money(pago)}</div><div class="sub">${money(total-pago)} pendente</div></div>
+    <div class="kpi b-amber"><span class="bar"></span><div class="lab">Funcionários</div><div class="val">${funcs.length}</div></div>
+  </div>
+  <div class="card no-print">
+    <div class="card-head"><h3>Folha de ${tab==='quinzena'?'quinzena (Casana)':'pagamento mensal (Buddy)'} — ${mesLabel(MES)}</h3><div class="spacer"></div>
+      <button class="btn" onclick="exportarPagamentosXLSX('${pagador}')">⬇ Excel p/ conferência</button>
+      <button class="btn" onclick="window.print()">🖶 Imprimir</button>
+    </div>
+    <div class="hint">${tab==='quinzena'?'1ª quinzena = 50% do salário cadastrado (dia 15 útil). 2ª quinzena = líquido da contabilidade − 1ª quinzena (último dia útil do mês).':'Pagamento mensal fixo do cadastro, com desconto manual quando houver (último dia útil do mês).'}</div>
+  </div>
+  ${blocks}`;
+}
+function setValorPg(fid,chave,v){ const r=DB.pagamentos[MES][fid]=DB.pagamentos[MES][fid]||{}; r[chave]=r[chave]||{}; r[chave].v=num(v); save(); render(); }
+function setLiquido(fid,v){ const r=DB.pagamentos[MES][fid]=DB.pagamentos[MES][fid]||{}; r.liquido=num(v); save(); render(); }
+function setDesconto(fid,v){ const r=DB.pagamentos[MES][fid]=DB.pagamentos[MES][fid]||{}; r.desconto=num(v); save(); render(); }
+function togglePago(fid,chave){ const r=DB.pagamentos[MES][fid]=DB.pagamentos[MES][fid]||{}; r[chave]=r[chave]||{}; r[chave].pago=!r[chave].pago; r[chave].data=r[chave].pago?todayISO():""; save(); render(); if(r[chave].pago) toast("Pago — lembre de salvar o comprovante no Drive."); }
+
+/* ---------- Impostos do mês ---------- */
+function renderImpostos(){
+  DB.impostos[MES]=DB.impostos[MES]||[];
+  const lista=DB.impostos[MES];
+  const total=lista.reduce((s,i)=>s+num(i.valor),0);
+  const pago=lista.filter(i=>i.pago).reduce((s,i)=>s+num(i.valor),0);
+  const rows=lista.length? lista.map((i,ix)=>`
+    <tr>
+      <td><input value="${esc(i.desc)}" placeholder="ex: GFD - FGTS Digital" onchange="setImposto(${ix},'desc',this.value)"></td>
+      <td class="num"><input style="text-align:right;max-width:120px" value="${i.valor?money(i.valor).replace('R$\u00a0',''):''}" placeholder="0,00" onchange="setImposto(${ix},'valor',this.value)"></td>
+      <td><input type="date" value="${i.vencimento||''}" onchange="setImposto(${ix},'vencimento',this.value)"></td>
+      <td><input type="date" value="${i.pagamento||''}" onchange="setImposto(${ix},'pagamento',this.value)"></td>
+      <td><select onchange="setImposto(${ix},'empresa',this.value)"><option value="BUDDY" ${i.empresa==='BUDDY'?'selected':''}>BUDDY</option><option value="CASANA" ${i.empresa==='CASANA'?'selected':''}>CASANA</option></select></td>
+      <td>${i.pago?`<span class="chip pago">Pago</span>`:`<span class="chip pend">Pendente</span>`}</td>
+      <td class="no-print"><div class="btn-row" style="flex-wrap:nowrap;gap:5px"><button class="btn sm ${i.pago?'':'ok'}" onclick="toggleImpostoPago(${ix})">${i.pago?'↺':'✓'}</button><button class="btn sm danger" onclick="delImposto(${ix})">✕</button></div></td>
+    </tr>`).join("") : `<tr><td colspan="7" class="empty">Nenhum imposto lançado. Adicione GFD (FGTS), DARF (INSS), Simples Nacional, etc.</td></tr>`;
+  return `
+  <div class="kpis">
+    <div class="kpi b-amber"><span class="bar"></span><div class="lab">Total de impostos · ${mesLabel(MES)}</div><div class="val money">${money(total)}</div></div>
+    <div class="kpi b-green"><span class="bar"></span><div class="lab">Pago</div><div class="val money">${money(pago)}</div></div>
+    <div class="kpi b-red"><span class="bar"></span><div class="lab">Pendente</div><div class="val money">${money(total-pago)}</div></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Impostos — ${mesLabel(MES)}</h3><div class="spacer"></div>
+      <button class="btn pri" onclick="addImposto()">＋ Lançar imposto</button>
+      <button class="btn" onclick="addImpostosPadrao()">＋ Padrões (GFD / DARF / Simples)</button>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Imposto</th><th class="num">Valor</th><th>Vencimento</th><th>Pagamento</th><th>Empresa</th><th>Status</th><th class="no-print"></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="hint" style="margin-top:10px">GFD (Guia do FGTS Digital), DARF (Guia do INSS) e Simples Nacional — conforme regime da empresa (Simples Nacional ou Lucro Presumido). Confirmar regime de cada empresa.</div>
+  </div>`;
+}
+function addImposto(){ DB.impostos[MES]=DB.impostos[MES]||[]; DB.impostos[MES].push({desc:"",valor:0,vencimento:"",pagamento:"",empresa:"BUDDY",pago:false}); save(); render(); }
+function addImpostosPadrao(){
+  DB.impostos[MES]=DB.impostos[MES]||[];
+  ["GFD - Guia do FGTS Digital","DARF - Guia do INSS","Guia do Simples Nacional"].forEach(d=>{
+    if(!DB.impostos[MES].some(i=>i.desc===d)) DB.impostos[MES].push({desc:d,valor:0,vencimento:"",pagamento:"",empresa:"BUDDY",pago:false});
+  });
+  save(); render();
+}
+function setImposto(ix,k,v){ const i=DB.impostos[MES][ix]; if(!i)return; i[k]=k==='valor'?num(v):v; save(); if(k==='valor')render(); }
+function toggleImpostoPago(ix){ const i=DB.impostos[MES][ix]; i.pago=!i.pago; if(i.pago&&!i.pagamento)i.pagamento=todayISO(); save(); render(); }
+function delImposto(ix){ DB.impostos[MES].splice(ix,1); save(); render(); }
+
+/* ===========================================================================
+   FOLHA DE ENCARGOS (planilha de verbas / saldo de rescisão)
+   =========================================================================== */
+let ENC_FUNC="";
+const VERBAS_PRESET=[
+  "Saldo de salário","Aviso prévio","13º salário proporcional","Férias proporcionais + 1/3",
+  "Férias vencidas + 1/3","FGTS do mês","Multa FGTS 40%","Vale-transporte (desconto)",
+  "Adiantamentos (desconto)","INSS (desconto)","IRRF (desconto)"
+];
+function renderEncargos(){
+  const funcs=DB.funcionarios.slice().sort((a,b)=>a.nome.localeCompare(b.nome));
+  if(!ENC_FUNC && funcs.length) ENC_FUNC=funcs[0].id;
+  DB.encargos[MES]=DB.encargos[MES]||{};
+  const f=func(ENC_FUNC);
+  const reg = f ? (DB.encargos[MES][ENC_FUNC]=DB.encargos[MES][ENC_FUNC]||{verbas:[],obs:""}) : null;
+
+  let totalProv=0,totalDesc=0;
+  const verbasRows = reg && reg.verbas.length ? reg.verbas.map((v,ix)=>{
+    const val=num(v.valor); if(v.tipo==='desconto')totalDesc+=val; else totalProv+=val;
+    return `<tr>
+      <td><input value="${esc(v.desc)}" list="verbaList" onchange="setVerba(${ix},'desc',this.value)"></td>
+      <td><select onchange="setVerba(${ix},'tipo',this.value)"><option value="provento" ${v.tipo!=='desconto'?'selected':''}>Provento</option><option value="desconto" ${v.tipo==='desconto'?'selected':''}>Desconto</option></select></td>
+      <td class="num"><input style="text-align:right;max-width:140px" value="${val?money(val).replace('R$\u00a0',''):''}" placeholder="0,00" onchange="setVerba(${ix},'valor',this.value)"></td>
+      <td class="no-print"><button class="btn sm danger" onclick="delVerba(${ix})">✕</button></td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="4" class="empty">Sem verbas. Adicione linhas para compor o saldo.</td></tr>`;
+  const saldo=totalProv-totalDesc;
+
+  return `
+  <datalist id="verbaList">${VERBAS_PRESET.map(v=>`<option value="${v}">`).join("")}</datalist>
+  <div class="warn-box" style="margin-bottom:16px">
+    <b>Aguardando suas diretrizes.</b> Você mencionou que passaria as regras de como a folha de encargos soma o saldo de rescisão (quais verbas entram e como cada uma é calculada) — isso não veio nos documentos. Por enquanto, esta é uma <b>planilha de verbas livre</b>: a contabilidade calcula os valores oficiais e a IANNA lança aqui para conferir o saldo. Quando você me passar as regras, automatizo os cálculos.
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <h3>Folha de encargos · saldo de rescisão</h3><div class="spacer"></div>
+      <select style="max-width:280px" onchange="ENC_FUNC=this.value;render()">${funcs.map(x=>`<option value="${x.id}" ${x.id===ENC_FUNC?'selected':''}>${esc(x.nome)} — ${x.pagador}</option>`).join("")||'<option>Sem funcionários</option>'}</select>
+    </div>
+    ${f?`
+    <div class="kpis" style="margin-bottom:14px">
+      <div class="kpi b-green"><span class="bar"></span><div class="lab">Proventos</div><div class="val money">${money(totalProv)}</div></div>
+      <div class="kpi b-red"><span class="bar"></span><div class="lab">Descontos</div><div class="val money">${money(totalDesc)}</div></div>
+      <div class="kpi b-blue"><span class="bar"></span><div class="lab">Saldo de rescisão</div><div class="val money">${money(saldo)}</div></div>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Verba</th><th>Tipo</th><th class="num">Valor</th><th class="no-print"></th></tr></thead>
+      <tbody>${verbasRows}</tbody>
+    </table></div>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn pri" onclick="addVerba()">＋ Adicionar verba</button>
+      <button class="btn" onclick="addVerbasPreset()">＋ Verbas comuns</button>
+      <button class="btn" onclick="exportarEncargosXLSX()">⬇ Excel</button>
+      <button class="btn" onclick="window.print()">🖶 PDF</button>
+    </div>
+    <div class="field" style="margin-top:14px"><label>Observações</label><textarea onchange="DB.encargos['${MES}']['${ENC_FUNC}'].obs=this.value;save()">${esc(reg.obs||"")}</textarea></div>
+    `:`<div class="empty">Cadastre um funcionário primeiro.</div>`}
+  </div>`;
+}
+function addVerba(){ DB.encargos[MES][ENC_FUNC].verbas.push({desc:"",tipo:"provento",valor:0}); save(); render(); }
+function addVerbasPreset(){ const reg=DB.encargos[MES][ENC_FUNC]; ["Saldo de salário","Aviso prévio","13º salário proporcional","Férias proporcionais + 1/3","FGTS do mês","Multa FGTS 40%"].forEach(d=>reg.verbas.push({desc:d,tipo:"provento",valor:0})); save(); render(); }
+function setVerba(ix,k,v){ const r=DB.encargos[MES][ENC_FUNC].verbas[ix]; r[k]=k==='valor'?num(v):v; save(); render(); }
+function delVerba(ix){ DB.encargos[MES][ENC_FUNC].verbas.splice(ix,1); save(); render(); }
+
+/* ===========================================================================
+   GERADORES DE E-MAIL PARA A CONTABILIDADE
+   =========================================================================== */
+let EMAIL_FUNC="", EMAIL_TIPO="admissao", EMAIL_OBS="";
+function selecionarEmailFunc(id){ EMAIL_FUNC=id; const f=func(id); if(f){ if(f.tipoSaida) EMAIL_TIPO=mapTipoSaidaEmail(f.tipoSaida); } render(); }
+function mapTipoSaidaEmail(t){ return { pedido_com_aviso:"pedido_com", pedido_sem_aviso:"pedido_sem", demissao_empresa_com_aviso:"empresa_com", demissao_empresa_sem_aviso:"empresa_sem" }[t]||"admissao"; }
+
+function renderEmails(){
+  const funcs=DB.funcionarios.slice().sort((a,b)=>a.nome.localeCompare(b.nome));
+  if(!EMAIL_FUNC && funcs.length) EMAIL_FUNC=funcs[0].id;
+  const f=func(EMAIL_FUNC);
+  const tipos=[
+    ["admissao","Admissão (registro)"],
+    ["pedido_com","Pedido de demissão — com aviso"],
+    ["pedido_sem","Pedido de demissão — sem aviso"],
+    ["empresa_com","Demissão pela empresa — com aviso"],
+    ["empresa_sem","Demissão pela empresa — sem aviso (indenizado)"],
+    ["aumento","Aumento salarial"]
+  ];
+  const eml = f ? montarEmail(EMAIL_TIPO, f) : null;
+  return `
+  <div class="card no-print">
+    <div class="card-head"><h3>Gerador de e-mail · contabilidade (${esc(DB.config.contabilidade)})</h3></div>
+    <div class="g3">
+      <div class="field"><label>Funcionário</label><select onchange="EMAIL_FUNC=this.value;render()">${funcs.map(x=>`<option value="${x.id}" ${x.id===EMAIL_FUNC?'selected':''}>${esc(x.nome)} — ${x.pagador}</option>`).join("")||'<option>—</option>'}</select></div>
+      <div class="field span2"><label>Tipo de e-mail</label><select onchange="EMAIL_TIPO=this.value;render()">${tipos.map(t=>`<option value="${t[0]}" ${EMAIL_TIPO===t[0]?'selected':''}>${t[1]}</option>`).join("")}</select></div>
+    </div>
+    ${EMAIL_TIPO!=="admissao"&&EMAIL_TIPO!=="aumento"?`<div class="field"><label>Observação / valores manuais (quinzenas já pagas, deduções, etc.)</label><textarea id="emailObs" placeholder="Ex.: 1ª quinzena de R$ 1.000,00 já paga; deduzir vale de R$ 150,00." onchange="EMAIL_OBS=this.value;render()">${esc(EMAIL_OBS)}</textarea></div>`:""}
+  </div>
+  ${f?`
+  <div class="card">
+    <div class="card-head"><h3>Pré-visualização — assunto: <span class="muted">${esc(eml.assunto)}</span></h3><div class="spacer"></div>
+      <button class="btn pri no-print" onclick="copiarEmailFormatado()">⧉ Copiar com formatação</button>
+      <button class="btn no-print" onclick='copiarTexto(window._emailText,"E-mail copiado (texto).")'>⧉ Copiar texto</button>
+      <button class="btn no-print" onclick="imprimirEmail()">🖶 PDF</button>
+    </div>
+    <div class="email-prev" id="emailPrev">${eml.html}</div>
+  </div>
+  <div class="note-box no-print">Os blocos em amarelo (dados do funcionário / admissão) saem destacados ao copiar com formatação e colar no Gmail. A assinatura pode ser ajustada em Configurações (atual: ${esc(DB.config.signatario)}).</div>
+  `:`<div class="card"><div class="empty">Cadastre um funcionário para gerar e-mails.</div></div>`}`;
+}
+
+function montarEmail(tipo, f){
+  const emp=EMPRESAS[f.pagador];
+  const c=DB.config;
+  const cab = `${esc(emp.razao)}, inscrita no CNPJ nº ${esc(emp.cnpj)}`;
+  const obs = EMAIL_OBS ? `\n\nObservação: ${EMAIL_OBS}` : "";
+  const obsHtml = EMAIL_OBS ? `<p><b>Observação:</b> ${esc(EMAIL_OBS)}</p>` : "";
+  const faltas = relatorioFaltasTexto(f.id, MES);
+
+  if(tipo==="admissao"){
+    const assunto=`REGISTRO – ${f.nome}`;
+    const html=`
+      <p>Prezados da ${esc(c.contabilidade)},</p>
+      <p>Solicito o registro do funcionário abaixo informado em nossa empresa <b>${esc(emp.razao)}</b>, inscrita no <b>CNPJ nº ${esc(emp.cnpj)}</b>.</p>
+      <p>Seguem, em anexo, as cópias dos documentos necessários para o processo de admissão.</p>
+      <div class="blk"><span class="lab-blk">Dados do funcionário:</span><br>
+        <b>Nome:</b> ${esc(f.nome)}<br>
+        <b>Função:</b> ${esc(f.cargo||"—")}<br>
+        <b>Tipo de salário:</b> Fixo mensal<br>
+        <b>Salário líquido:</b> ${money(f.salarioFixo)}</div>
+      <p><i>Informo que o valor acima já contempla o rateio de todos os benefícios, incluindo vale-refeição e demais benefícios aplicáveis.</i></p>
+      <div class="blk"><span class="lab-blk">Dados da admissão:</span><br>
+        <b>Data de admissão:</b> ${fmtDateLong(f.dataAdmissao)}<br>
+        <b>Carga horária:</b> ${esc(c.cargaHoraria)}</div>
+      <p><b>Horário de trabalho:</b><br>${esc(c.horario1)}<br>${esc(c.horario2)}</p>
+      <p><i>Por favor, nos enviem os documentos necessários para admissão.</i><br>
+      <i>Fico à disposição caso seja necessária alguma informação adicional.</i></p>
+      <p>Atenciosamente,<br>${esc(c.signatario)}</p>`;
+    const text=`Prezados da ${c.contabilidade},
+
+Solicito o registro do funcionário abaixo informado em nossa empresa ${cab}.
+
+Seguem, em anexo, as cópias dos documentos necessários para o processo de admissão.
+
+Dados do funcionário:
+Nome: ${f.nome}
+Função: ${f.cargo||"—"}
+Tipo de salário: Fixo mensal
+Salário líquido: ${money(f.salarioFixo)}
+
+Informo que o valor acima já contempla o rateio de todos os benefícios, incluindo vale-refeição e demais benefícios aplicáveis.
+
+Dados da admissão:
+Data de admissão: ${fmtDateLong(f.dataAdmissao)}
+Carga horária: ${c.cargaHoraria}
+
+Horário de trabalho:
+${c.horario1}
+${c.horario2}
+
+Por favor, nos enviem os documentos necessários para admissão.
+Fico à disposição caso seja necessária alguma informação adicional.
+
+Atenciosamente,
+${c.signatario}`;
+    return {assunto, html, text};
+  }
+
+  if(tipo==="aumento"){
+    const ult=f.historicoSalarios&&f.historicoSalarios[0];
+    const assunto=`ALTERAÇÃO SALARIAL – ${f.nome}`;
+    const linha = ult ? `de ${money(ult.de)} para <b>${money(ult.para)}</b>` : `para <b>${money(f.salarioFixo)}</b>`;
+    const linhaT = ult ? `de ${money(ult.de)} para ${money(ult.para)}` : `para ${money(f.salarioFixo)}`;
+    const html=`
+      <p>Prezados da ${esc(c.contabilidade)},</p>
+      <p>Informamos o reajuste salarial do funcionário <b>${esc(f.nome)}</b>${f.cpfCnpj?`, inscrito no CPF/CNPJ nº ${esc(f.cpfCnpj)}`:""}, ocupante do cargo de <b>${esc(f.cargo||"—")}</b>, da empresa <b>${esc(emp.razao)}</b> (CNPJ nº ${esc(emp.cnpj)}).</p>
+      <div class="blk"><span class="lab-blk">Novo salário em folha:</span> ${linha}${ult?`<br>A partir de ${fmtDate(ult.data)}.`:""}</div>
+      <p>Solicitamos o ajuste em folha de pagamento conforme valores informados.</p>
+      <p>Atenciosamente,<br>${esc(c.signatario)}</p>`;
+    const text=`Prezados da ${c.contabilidade},
+
+Informamos o reajuste salarial do funcionário ${f.nome}${f.cpfCnpj?`, inscrito no CPF/CNPJ nº ${f.cpfCnpj}`:""}, ocupante do cargo de ${f.cargo||"—"}, da empresa ${cab}.
+
+Novo salário em folha: ${linhaT}${ult?` (a partir de ${fmtDate(ult.data)})`:""}.
+
+Solicitamos o ajuste em folha de pagamento conforme valores informados.
+
+Atenciosamente,
+${c.signatario}`;
+    return {assunto, html, text};
+  }
+
+  // demissões — usam saudação "Meus caros da {contabilidade}"
+  const nome=esc(f.nome), cpf=esc(f.cpfCnpj||"—"), cargo=esc(f.cargo||"—");
+  const dPedido=fmtDate(f.dataPedido), dIni=fmtDate(f.inicioAviso), dFim=fmtDate(f.fimAviso), dUlt=fmtDate(f.ultimoDiaTrabalho||f.dataDemissao);
+  let assunto, corpoHtml, corpoText;
+
+  if(tipo==="pedido_com"){
+    assunto=`PEDIDO DE DEMISSÃO – ${f.nome}`;
+    corpoHtml=`<p>O funcionário <b>${nome}</b>, inscrito no CPF nº ${cpf}, ocupante do cargo de ${cargo}, solicitou pedido de demissão da empresa <b>${esc(emp.razao)}</b>, inscrita no CNPJ nº ${esc(emp.cnpj)}, na data de ${dPedido}.</p>
+      <p>Informamos que o funcionário irá cumprir o aviso prévio trabalhado, com início em ${dIni} e término previsto para ${dFim}.</p>
+      <p>Por favor, solicitamos o envio dos documentos rescisórios necessários para as devidas assinaturas e conferências.</p>
+      <p>Solicitamos também que a rescisão seja feita considerando o salário mensal do funcionário e os dias trabalhados até a data final do aviso prévio, conforme rotina contábil e legislação aplicável.</p>`;
+    corpoText=`O funcionário ${f.nome}, inscrito no CPF nº ${cpf}, ocupante do cargo de ${cargo}, solicitou pedido de demissão da empresa ${cab}, na data de ${dPedido}.
+
+Informamos que o funcionário irá cumprir o aviso prévio trabalhado, com início em ${dIni} e término previsto para ${dFim}.
+
+Por favor, solicitamos o envio dos documentos rescisórios necessários para as devidas assinaturas e conferências.
+
+Solicitamos também que a rescisão seja feita considerando o salário mensal do funcionário e os dias trabalhados até a data final do aviso prévio, conforme rotina contábil e legislação aplicável.`;
+  } else if(tipo==="pedido_sem"){
+    assunto=`PEDIDO DE DEMISSÃO – ${f.nome}`;
+    corpoHtml=`<p>O funcionário <b>${nome}</b>, inscrito no CPF nº ${cpf}, ocupante do cargo de ${cargo}, solicitou pedido de demissão da empresa <b>${esc(emp.razao)}</b>, inscrita no CNPJ nº ${esc(emp.cnpj)}, na data de ${dPedido}.</p>
+      <p>Informamos que o funcionário não irá cumprir o aviso prévio, encerrando suas atividades na empresa em ${dUlt}.</p>
+      <p>Por favor, solicitamos o envio dos documentos rescisórios necessários para as devidas assinaturas e conferências.</p>
+      <p>Solicitamos também que a rescisão seja feita considerando o valor proporcional ao salário mensal do funcionário, referente aos dias trabalhados, observando os devidos descontos e orientações contábeis aplicáveis ao aviso prévio não trabalhado.</p>`;
+    corpoText=`O funcionário ${f.nome}, inscrito no CPF nº ${cpf}, ocupante do cargo de ${cargo}, solicitou pedido de demissão da empresa ${cab}, na data de ${dPedido}.
+
+Informamos que o funcionário não irá cumprir o aviso prévio, encerrando suas atividades na empresa em ${dUlt}.
+
+Por favor, solicitamos o envio dos documentos rescisórios necessários para as devidas assinaturas e conferências.
+
+Solicitamos também que a rescisão seja feita considerando o valor proporcional ao salário mensal do funcionário, referente aos dias trabalhados, observando os devidos descontos e orientações contábeis aplicáveis ao aviso prévio não trabalhado.`;
+  } else if(tipo==="empresa_sem"){
+    assunto=`DEMISSÃO – ${f.nome}`;
+    corpoHtml=`<p>Informamos que a empresa <b>${esc(emp.razao)}</b>, inscrita no CNPJ nº ${esc(emp.cnpj)}, decidiu realizar a dispensa sem justa causa do funcionário <b>${nome}</b>, inscrito no CPF nº ${cpf}, ocupante do cargo de ${cargo}, na data de ${dUlt}.</p>
+      <p>A demissão será feita sem cumprimento de aviso prévio trabalhado, sendo o aviso prévio indenizado pela empresa, conforme orientação contábil e legislação aplicável.</p>
+      <p>Por favor, solicitamos o envio dos documentos rescisórios necessários para as devidas assinaturas e conferências.</p>
+      <p>Solicitamos também que a rescisão seja feita considerando o salário mensal do funcionário, os dias trabalhados até ${dUlt}, bem como as verbas rescisórias devidas.</p>`;
+    corpoText=`Informamos que a empresa ${cab}, decidiu realizar a dispensa sem justa causa do funcionário ${f.nome}, inscrito no CPF nº ${cpf}, ocupante do cargo de ${cargo}, na data de ${dUlt}.
+
+A demissão será feita sem cumprimento de aviso prévio trabalhado, sendo o aviso prévio indenizado pela empresa, conforme orientação contábil e legislação aplicável.
+
+Por favor, solicitamos o envio dos documentos rescisórios necessários para as devidas assinaturas e conferências.
+
+Solicitamos também que a rescisão seja feita considerando o salário mensal do funcionário, os dias trabalhados até ${dUlt}, bem como as verbas rescisórias devidas.`;
+  } else { // empresa_com
+    assunto=`DEMISSÃO – ${f.nome}`;
+    corpoHtml=`<p>Informamos que a empresa <b>${esc(emp.razao)}</b>, inscrita no CNPJ nº ${esc(emp.cnpj)}, decidiu realizar a dispensa sem justa causa do funcionário <b>${nome}</b>, inscrito no CPF nº ${cpf}, ocupante do cargo de ${cargo}, na data de ${dPedido}.</p>
+      <p>Neste caso, solicitamos que o aviso prévio seja trabalhado pelo funcionário, com início em ${dIni} e término previsto para ${dFim}.</p>
+      <p>Por favor, solicitamos o envio dos documentos necessários para comunicação, assinatura e posterior rescisão do funcionário.</p>
+      <p>Solicitamos também que a rescisão seja feita considerando o salário mensal do funcionário, os dias trabalhados até o encerramento do aviso prévio e as demais verbas rescisórias devidas, conforme orientação contábil e legislação aplicável.</p>`;
+    corpoText=`Informamos que a empresa ${cab}, decidiu realizar a dispensa sem justa causa do funcionário ${f.nome}, inscrito no CPF nº ${cpf}, ocupante do cargo de ${cargo}, na data de ${dPedido}.
+
+Neste caso, solicitamos que o aviso prévio seja trabalhado pelo funcionário, com início em ${dIni} e término previsto para ${dFim}.
+
+Por favor, solicitamos o envio dos documentos necessários para comunicação, assinatura e posterior rescisão do funcionário.
+
+Solicitamos também que a rescisão seja feita considerando o salário mensal do funcionário, os dias trabalhados até o encerramento do aviso prévio e as demais verbas rescisórias devidas, conforme orientação contábil e legislação aplicável.`;
+  }
+
+  const html=`<p>Meus caros da ${esc(c.contabilidade)},</p>${corpoHtml}
+    <div class="blk"><span class="lab-blk">Relatório de presença/faltas:</span><br>${esc(faltas)}</div>
+    ${obsHtml}
+    <p>Segue em anexo a carta de demissão do funcionário.</p>
+    <p>Atenciosamente,<br>${esc(c.signatario)}</p>`;
+  const text=`Meus caros da ${c.contabilidade},
+
+${corpoText}
+
+Relatório de presença/faltas: ${faltas}${obs}
+
+Segue em anexo a carta de demissão do funcionário.
+
+Atenciosamente,
+${c.signatario}`;
+  return {assunto, html, text};
+}
+
+function copiarEmailFormatado(){
+  const node=$("#emailPrev"); if(!node) return;
+  try{
+    const html=node.innerHTML; const text=window._emailText||node.innerText;
+    if(navigator.clipboard && window.ClipboardItem){
+      navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([html],{type:"text/html"}),"text/plain":new Blob([text],{type:"text/plain"})})]).then(()=>toast("E-mail copiado com formatação."),()=>selecionarNode(node));
+    } else selecionarNode(node);
+  }catch(e){ selecionarNode(node); }
+}
+function selecionarNode(node){ const r=document.createRange(); r.selectNode(node); const s=getSelection(); s.removeAllRanges(); s.addRange(r); try{document.execCommand("copy");toast("E-mail copiado.");}catch(e){toast("Selecione e copie manualmente.");} s.removeAllRanges(); }
+function imprimirEmail(){
+  const node=$("#emailPrev"); const w=window.open("","_blank");
+  w.document.write(`<html><head><title>E-mail</title><style>body{font-family:Arial;padding:30px;color:#111}.blk{background:#fff8c4;padding:10px 12px;border:1px solid #f0e08a;border-radius:5px;margin:10px 0}.lab-blk{background:#fff3a3;font-weight:bold;padding:2px 6px}</style></head><body>${node.innerHTML}</body></html>`);
+  w.document.close(); w.print();
+}
+
+/* ===========================================================================
+   RELATÓRIOS
+   =========================================================================== */
+let REL_TAB="presencas";
+function renderRelatorios(){
+  return `
+  <div class="subtabs no-print">
+    <button class="${REL_TAB==='presencas'?'on':''}" onclick="REL_TAB='presencas';render()">Presenças e faltas</button>
+    <button class="${REL_TAB==='pagamentos'?'on':''}" onclick="REL_TAB='pagamentos';render()">Quinzenas e pagamentos</button>
+    <button class="${REL_TAB==='encargos'?'on':''}" onclick="REL_TAB='encargos';render()">Folha de encargos</button>
+    <button class="${REL_TAB==='contas'?'on':''}" onclick="REL_TAB='contas';render()">Pagamentos e contas</button>
+  </div>
+  ${ {presencas:relPresencas, pagamentos:relPagamentos, encargos:relEncargos, contas:relContas}[REL_TAB]() }`;
+}
+
+function relCabecalho(titulo, sub){
+  return `<div class="card-head"><div><h3>${esc(titulo)}</h3><div class="hint">${esc(sub||"")}</div></div><div class="spacer"></div>
+    <button class="btn no-print" onclick="window.print()">⬇ PDF / Imprimir</button></div>`;
+}
+
+/* 1) Presenças e faltas do mês — para IANNA / contabilidade */
+function relPresencas(){
+  const funcs=funcsAtivosNoMes(MES).sort((a,b)=>(parseInt(a.idContab)||9999)-(parseInt(b.idContab)||9999)||a.nome.localeCompare(b.nome));
+  const rows=funcs.map(f=>{
+    const {faltas,justificadas}=faltasDoMes(f.id,MES);
+    const reg=(DB.diarias[MES]||{})[f.id]||{};
+    const p=Object.values(reg).filter(v=>v==="P").length;
+    const fmt=arr=>arr.length?arr.map(d=>d+"/"+MES.split("-")[1]).join(", "):"—";
+    return `<tr><td>${esc(f.idContab||"—")}</td><td>${esc(f.nome)} ${pagadorChip(f.pagador)}</td>
+      <td class="num">${p}</td>
+      <td class="num" style="color:var(--bad)">${faltas.length}</td><td>${fmt(faltas)}</td>
+      <td class="num" style="color:var(--warn)">${justificadas.length}</td><td>${fmt(justificadas)}</td></tr>`;
+  }).join("")||`<tr><td class="empty" colspan="7">Sem funcionários ativos no mês.</td></tr>`;
+  return `<div class="card">${relCabecalho("Relatório de presenças e faltas — "+mesLabel(MES),"Fonte: controle de diárias preenchido pelo vigia/porteiro. Faltas justificadas exigem atestado arquivado.")}
+    <div class="tbl-wrap"><table><thead><tr><th>ID</th><th>Funcionário</th><th class="num">Presenças</th><th class="num">Faltas</th><th>Dias de falta</th><th class="num">Justif.</th><th>Dias justificados</th></tr></thead>
+    <tbody>${rows}</tbody></table></div></div>`;
+}
+
+/* 2) Quinzenas e pagamentos do mês */
+function relPagamentos(){
+  const funcs=funcsAtivosNoMes(MES).sort((a,b)=>a.pagador.localeCompare(b.pagador)||a.nome.localeCompare(b.nome));
+  let totGeral=0, totPago=0;
+  const rows=funcs.map(f=>{
+    const pg=pagamentos(f,MES); totGeral+=pg.total; totPago+=pg.pagoTotal;
+    const partes=pg.partes.map(p=>`${p.label}: ${money(p.valor)} (${fmtDate(p.data)})${p.pago?' ✓':''}`).join("<br>");
+    return `<tr><td>${esc(f.nome)} ${pagadorChip(f.pagador)}</td><td>${pg.tipo}</td>
+      <td>${partes}</td><td class="num">${money(pg.total)}</td>
+      <td class="num" style="color:var(--ok)">${money(pg.pagoTotal)}</td>
+      <td class="num" style="color:var(--warn)">${money(pg.total-pg.pagoTotal)}</td></tr>`;
+  }).join("")||`<tr><td class="empty" colspan="6">Sem funcionários no mês.</td></tr>`;
+  return `<div class="card">${relCabecalho("Quinzenas e pagamentos — "+mesLabel(MES),"Casana: quinzenal (1ª = 50% do salário; 2ª = líquido da contabilidade − 1ª). Buddy: mensal − desconto.")}
+    <div class="tbl-wrap"><table><thead><tr><th>Funcionário</th><th>Tipo</th><th>Parcelas</th><th class="num">Total</th><th class="num">Pago</th><th class="num">A pagar</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><th colspan="3">Totais</th><th class="num">${money(totGeral)}</th><th class="num" style="color:var(--ok)">${money(totPago)}</th><th class="num" style="color:var(--warn)">${money(totGeral-totPago)}</th></tr></tfoot>
+    </table></div></div>`;
+}
+
+/* 3) Folha de encargos / rescisão por funcionário */
+function relEncargos(){
+  const reg=(DB.encargos[MES]||{});
+  const ids=Object.keys(reg);
+  if(!ids.length) return `<div class="card">${relCabecalho("Folha de encargos — "+mesLabel(MES))}
+    <div class="hint" style="padding:14px;background:#3a2e10;border:1px solid #6b5418;border-radius:8px;color:#f3d98a">
+    Nenhuma folha de encargos lançada neste mês. Abra a aba <b>Folha de encargos</b> para montar as verbas de rescisão.
+    <br><br><b>Atenção:</b> os valores das verbas são informados manualmente — o sistema não calcula encargos automaticamente porque as diretrizes de cálculo ainda não foram definidas.</div></div>`;
+  const blocos=ids.map(id=>{
+    const f=func(id); if(!f) return "";
+    const r=reg[id]; const prov=r.verbas.filter(v=>v.tipo==="provento").reduce((s,v)=>s+num(v.valor),0);
+    const desc=r.verbas.filter(v=>v.tipo==="desconto").reduce((s,v)=>s+num(v.valor),0);
+    const linhas=r.verbas.map(v=>`<tr><td>${esc(v.desc||"—")}</td><td>${v.tipo==="desconto"?"Desconto":"Provento"}</td><td class="num" style="color:${v.tipo==='desconto'?'var(--bad)':'var(--ok)'}">${money(v.valor)}</td></tr>`).join("")||`<tr><td class="empty" colspan="3">Sem verbas.</td></tr>`;
+    return `<div style="margin-bottom:22px"><h4 style="margin:0 0 8px">${esc(f.nome)} ${pagadorChip(f.pagador)} — ${EMPRESAS[f.pagador].razao}</h4>
+      <div class="tbl-wrap"><table><thead><tr><th>Verba</th><th>Tipo</th><th class="num">Valor</th></tr></thead><tbody>${linhas}</tbody>
+      <tfoot><tr><th colspan="2">Saldo (proventos − descontos)</th><th class="num">${money(prov-desc)}</th></tr></tfoot></table></div>
+      ${r.obs?`<div class="hint">Obs.: ${esc(r.obs)}</div>`:""}</div>`;
+  }).join("");
+  return `<div class="card">${relCabecalho("Folha de encargos / rescisão — "+mesLabel(MES),"Valores informados manualmente conforme orientação da contabilidade.")}${blocos}</div>`;
+}
+
+/* 4) Pagamentos e contas (impostos + folha) consolidado */
+function relContas(){
+  const imps=(DB.impostos[MES]||[]);
+  const funcs=funcsAtivosNoMes(MES);
+  let folhaBuddy=0, folhaCasana=0;
+  funcs.forEach(f=>{ const pg=pagamentos(f,MES); if(f.pagador==="BUDDY")folhaBuddy+=pg.total; else folhaCasana+=pg.total; });
+  const totImp=imps.reduce((s,i)=>s+num(i.valor),0);
+  const impPago=imps.filter(i=>i.pago).reduce((s,i)=>s+num(i.valor),0);
+  const linhasImp=imps.map(i=>`<tr><td>${esc(i.desc||"—")}</td><td>${esc(i.empresa)}</td><td>${fmtDate(i.vencimento)}</td><td class="num">${money(i.valor)}</td><td>${i.pago?`✓ ${fmtDate(i.pagamento)}`:'<span style="color:var(--warn)">em aberto</span>'}</td></tr>`).join("")||`<tr><td class="empty" colspan="5">Sem impostos lançados.</td></tr>`;
+  return `<div class="card">${relCabecalho("Pagamentos e contas — "+mesLabel(MES),"Consolida folha de pagamento por empresa e impostos do mês.")}
+    <div class="kpis">
+      <div class="kpi"><div class="bar" style="background:var(--casana,#7c5cff)"></div><div class="lab">Folha Casana</div><div class="val money">${money(folhaCasana)}</div></div>
+      <div class="kpi"><div class="bar" style="background:var(--buddy,#1f9d6b)"></div><div class="lab">Folha Buddy</div><div class="val money">${money(folhaBuddy)}</div></div>
+      <div class="kpi"><div class="bar" style="background:var(--accent)"></div><div class="lab">Impostos do mês</div><div class="val money">${money(totImp)}</div><div class="sub">Pago: ${money(impPago)} · Aberto: ${money(totImp-impPago)}</div></div>
+      <div class="kpi"><div class="bar" style="background:var(--warn)"></div><div class="lab">Total geral</div><div class="val money">${money(folhaCasana+folhaBuddy+totImp)}</div></div>
+    </div>
+    <h4 style="margin:6px 0 8px">Impostos</h4>
+    <div class="tbl-wrap"><table><thead><tr><th>Imposto</th><th>Empresa</th><th>Vencimento</th><th class="num">Valor</th><th>Situação</th></tr></thead><tbody>${linhasImp}</tbody>
+    <tfoot><tr><th colspan="3">Total</th><th class="num">${money(totImp)}</th><th></th></tr></tfoot></table></div></div>`;
+}
+
+/* ===========================================================================
+   CONFIGURAÇÕES
+   =========================================================================== */
+function renderConfig(){
+  const c=DB.config;
+  return `<div class="card" style="max-width:760px">
+    <div class="card-head"><h3>Configurações</h3></div>
+    <div class="form-grid">
+      <div class="field span2"><label>Contabilidade (usada nas saudações dos e-mails)</label>
+        <input id="c_contab" value="${esc(c.contabilidade)}" placeholder="Ex.: Foxtrot"></div>
+      <div class="field span2"><label>Signatário (quem assina os e-mails)</label>
+        <input id="c_sign" value="${esc(c.signatario)}" placeholder="Ex.: Felipe Moura da Costa"></div>
+      <div class="field span2"><label>Carga horária</label>
+        <input id="c_carga" value="${esc(c.cargaHoraria)}"></div>
+      <div class="field span2"><label>Horário — linha 1</label>
+        <input id="c_h1" value="${esc(c.horario1)}"></div>
+      <div class="field span2"><label>Horário — linha 2</label>
+        <input id="c_h2" value="${esc(c.horario2)}"></div>
+    </div>
+    <div class="card-head" style="margin-top:18px"><h3 style="font-size:15px">Empresas (pagadores)</h3></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Pagador</th><th>Razão social</th><th>CNPJ</th></tr></thead><tbody>
+      <tr><td>${pagadorChip("CASANA")}</td><td>${EMPRESAS.CASANA.razao}</td><td>${EMPRESAS.CASANA.cnpj}</td></tr>
+      <tr><td>${pagadorChip("BUDDY")}</td><td>${EMPRESAS.BUDDY.razao}</td><td>${EMPRESAS.BUDDY.cnpj}</td></tr>
+    </tbody></table></div>
+    <div class="hint" style="margin-top:8px">Casana → conta BUDDY &amp; GENECY · CLT recebe da conta GENECY (confirmar com Kemuel se CLT também sai da conta Buddy &amp; Genecy).</div>
+    <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn pri" onclick="salvarConfig()">Salvar configurações</button>
+      <button class="btn" onclick="exportarJSON()">⬇ Backup completo (JSON)</button>
+      <button class="btn" onclick="document.getElementById('imp').click()">⬆ Restaurar backup</button>
+    </div>
+    <div class="hint" style="margin-top:14px;padding:12px;background:#1c2230;border:1px solid var(--line);border-radius:8px">
+      <b>Pontos a confirmar com você:</b><br>
+      1. Diretrizes de cálculo da <b>folha de encargos/rescisão</b> (quais verbas e como cada uma é calculada) — hoje os valores são lançados manualmente.<br>
+      2. Nome da contabilidade está como <b>${esc(c.contabilidade)}</b> — confirmar.<br>
+      3. CLT também é paga pela conta Buddy &amp; Genecy? (questão do Kemuel)
+    </div>
+  </div>`;
+}
+function salvarConfig(){
+  DB.config.contabilidade=$("#c_contab").value.trim()||"Foxtrot";
+  DB.config.signatario=$("#c_sign").value.trim();
+  DB.config.cargaHoraria=$("#c_carga").value.trim();
+  DB.config.horario1=$("#c_h1").value.trim();
+  DB.config.horario2=$("#c_h2").value.trim();
+  save(); toast("Configurações salvas."); render();
+}
+
+/* ===========================================================================
+   COPIAR TEXTO (helper genérico)
+   =========================================================================== */
+function copiarTexto(txt, msg){
+  txt=txt||"";
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>toast(msg||"Copiado."),()=>fallbackCopia(txt,msg));
+  } else fallbackCopia(txt,msg);
+}
+function fallbackCopia(txt,msg){
+  const ta=document.createElement("textarea"); ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand("copy"); toast(msg||"Copiado."); }catch(e){ toast("Não foi possível copiar automaticamente."); }
+  document.body.removeChild(ta);
+}
+
+/* ===========================================================================
+   BACKUP / EXPORT
+   =========================================================================== */
+function exportarJSON(){
+  const blob=new Blob([JSON.stringify(DB,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=`backup_rh_financeiro_${todayISO()}.json`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1500); toast("Backup gerado.");
+}
+function importarJSON(input){
+  const file=input.files && input.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const data=JSON.parse(r.result);
+      if(!data || typeof data!=="object" || !("funcionarios" in data)) throw new Error("formato");
+      if(!confirm("Restaurar este backup substituirá TODOS os dados atuais. Continuar?")){ input.value=""; return; }
+      DB=Object.assign({funcionarios:[],diarias:{},pagamentos:{},impostos:{},encargos:{},config:{},seq:1}, data);
+      save(); toast("Backup restaurado."); render();
+    }catch(e){ toast("Arquivo inválido."); }
+    input.value="";
+  };
+  r.readAsText(file);
+}
+
+function baixarXLSX(wb, nome){
+  XLSX.writeFile(wb, nome);
+}
+function exportarFuncionariosXLSX(){
+  const rows=DB.funcionarios.map(f=>({
+    "ID contábil":f.idContab, "Nome":f.nome, "Apelido":f.apelido, "Cargo":f.cargo,
+    "Contrato":f.tipoContrato, "Pagador":f.pagador, "Empresa":EMPRESAS[f.pagador].razao, "CNPJ empresa":EMPRESAS[f.pagador].cnpj,
+    "Salário":f.salarioFixo, "CPF/CNPJ":f.cpfCnpj, "Tipo PIX":f.tipoPix, "Chave PIX":f.chavePix,
+    "Admissão":fmtDate(f.dataAdmissao), "Salário-família":f.recebeSalarioFamilia?"Sim":"Não",
+    "Status":f.status, "Tempo de casa":tempoTrabalhado(f.dataAdmissao,f.dataDemissao||null),
+    "Último dia trabalho":fmtDate(f.ultimoDiaTrabalho), "Demissão":fmtDate(f.dataDemissao),
+    "Observações":f.observacoes
+  }));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Funcionários");
+  baixarXLSX(wb, `funcionarios_${todayISO()}.xlsx`);
+  toast("Excel de funcionários gerado.");
+}
+function exportarDiariasXLSX(){
+  const [y,m]=MES.split("-").map(Number); const ndias=new Date(y,m,0).getDate();
+  const funcs=funcsAtivosNoMes(MES).sort((a,b)=>(parseInt(a.idContab)||9999)-(parseInt(b.idContab)||9999)||a.nome.localeCompare(b.nome));
+  const rows=funcs.map(f=>{
+    const reg=(DB.diarias[MES]||{})[f.id]||{}; const o={"ID":f.idContab,"Funcionário":f.nome,"Pagador":f.pagador};
+    let p=0,fa=0,j=0;
+    for(let d=1;d<=ndias;d++){ const k=String(d).padStart(2,"0"); const v=reg[k]||""; o[k]=v; if(v==="P")p++;if(v==="F")fa++;if(v==="J")j++; }
+    o["Presenças"]=p; o["Faltas"]=fa; o["Justificadas"]=j; return o;
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Diárias "+MES);
+  baixarXLSX(wb, `diarias_${MES}.xlsx`);
+  toast("Excel de diárias gerado.");
+}
+function exportarPagamentosXLSX(pagadorFiltro){
+  const funcs=funcsAtivosNoMes(MES).filter(f=>!pagadorFiltro||f.pagador===pagadorFiltro)
+    .sort((a,b)=>a.nome.localeCompare(b.nome));
+  const rows=[];
+  funcs.forEach(f=>{
+    const pg=pagamentos(f,MES);
+    pg.partes.forEach(p=>rows.push({
+      "Funcionário":f.nome, "Apelido":f.apelido, "Pagador":f.pagador, "Empresa":EMPRESAS[f.pagador].razao,
+      "Parcela":p.label, "Data pagamento":fmtDate(p.data), "Valor":p.valor, "Pago":p.pago?"Sim":"Não",
+      "Tipo PIX":f.tipoPix, "Chave PIX":f.chavePix, "CPF/CNPJ":f.cpfCnpj
+    }));
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[{Aviso:"Sem pagamentos no mês"}]), "Pagamentos");
+  baixarXLSX(wb, `pagamentos_${pagadorFiltro||"todos"}_${MES}.xlsx`);
+  toast("Excel de pagamentos gerado.");
+}
+function exportarEncargosXLSX(){
+  const reg=(DB.encargos[MES]||{}); const rows=[];
+  Object.keys(reg).forEach(id=>{
+    const f=func(id); if(!f) return;
+    reg[id].verbas.forEach(v=>rows.push({
+      "Funcionário":f.nome, "Pagador":f.pagador, "Empresa":EMPRESAS[f.pagador].razao,
+      "Verba":v.desc, "Tipo":v.tipo==="desconto"?"Desconto":"Provento", "Valor":num(v.valor)
+    }));
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[{Aviso:"Sem verbas lançadas no mês"}]), "Encargos");
+  baixarXLSX(wb, `encargos_${MES}.xlsx`);
+  toast("Excel de encargos gerado.");
+}
+
+</script>
+</body>
+</html>

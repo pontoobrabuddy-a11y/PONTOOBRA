@@ -123,8 +123,8 @@ export default function EmailsPage() {
     return `${String(d).padStart(2, "0")} de ${meses[m - 1]} de ${y}`;
   };
 
-  const formatCurrency = (val: number | undefined): string => {
-    if (val === undefined || isNaN(val)) return "—";
+  const formatCurrency = (val: number | null | undefined): string => {
+    if (val === null || val === undefined || isNaN(val)) return "—";
     return val.toLocaleString("pt-BR", {
       style: "currency",
       currency: "BRL",

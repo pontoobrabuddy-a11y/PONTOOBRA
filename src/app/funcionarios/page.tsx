@@ -1143,18 +1143,19 @@ Ianna - RH e Financeiro`;
             {/* Coluna Direita: Fluxo */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold tracking-wider uppercase text-blue-600 dark:text-blue-500">
-                Fluxo de admissão (IANNA)
+                Fluxo de Admissão (RH)
               </h3>
               <div className="space-y-3">
                 {[
-                  "MANOEL/MANUEL capta o funcionário e ele já inicia o trabalho.",
-                  "IANNA contata o funcionário e envia o checklist de documentos.",
-                  "Recebe os documentos, escaneia e anexa na pasta do Drive.",
-                  "Cadastra o funcionário neste sistema.",
-                  "Gera o e-mail de admissão e envia para a contabilidade.",
-                  "Recebe os documentos da contabilidade, baixa, salva no Drive e imprime.",
-                  "Funcionário e Manuel assinam; IANNA escaneia e salva os assinados.",
-                  "Responde o mesmo e-mail à contabilidade com os documentos assinados. Funcionário admitido."
+                  "Captação de funcionários pelo Mestre de Obras.",
+                  "Leitura e assinatura do Regimento Interno da empresa pelo funcionário na própria obra.",
+                  "Contato inicial com o funcionário e envio do checklist de documentos necessários.",
+                  "Recebimento de documentos, digitalização e anexação na pasta correspondente no Google Drive.",
+                  "Cadastro do funcionário no sistema (este aplicativo).",
+                  "Geração e envio do e-mail de admissão para a contabilidade.",
+                  "Recebimento dos documentos da contabilidade, download, arquivamento no Drive e impressão.",
+                  "Coleta de assinaturas do funcionário e do empregador, digitalização e arquivamento dos documentos assinados no Drive.",
+                  "Envio de retorno à contabilidade respondendo ao mesmo e-mail com as cópias assinadas. Funcionário admitido com sucesso!"
                 ].map((step, idx) => (
                   <div key={idx} className="flex gap-3 items-start border-b border-dashed border-slate-150 dark:border-slate-800 pb-3 last:border-0">
                     <span className="flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 dark:bg-blue-700 text-white text-xs font-bold shrink-0 mt-0.5">

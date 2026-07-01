@@ -512,7 +512,7 @@ ${config.signatario}`;
 
       {/* Configurações Card */}
       {isConfigOpen && (
-        <Card className="border-slate-850 bg-slate-900/60 backdrop-blur">
+        <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40">
           <CardHeader>
             <CardTitle className="text-sm font-semibold flex items-center gap-2 text-blue-500">
               <Settings2 className="h-4 w-4" />
@@ -525,7 +525,7 @@ ${config.signatario}`;
               <Input
                 value={config.contabilidade}
                 onChange={(e) => saveConfig("contabilidade", e.target.value)}
-                className="bg-slate-950 border-slate-850"
+                className="border-slate-200 dark:border-slate-800 bg-transparent"
               />
             </div>
             <div className="space-y-1">
@@ -533,7 +533,7 @@ ${config.signatario}`;
               <Input
                 value={config.signatario}
                 onChange={(e) => saveConfig("signatario", e.target.value)}
-                className="bg-slate-950 border-slate-850"
+                className="border-slate-200 dark:border-slate-800 bg-transparent"
               />
             </div>
             <div className="space-y-1">
@@ -541,7 +541,7 @@ ${config.signatario}`;
               <Input
                 value={config.cargaHoraria}
                 onChange={(e) => saveConfig("cargaHoraria", e.target.value)}
-                className="bg-slate-950 border-slate-850"
+                className="border-slate-200 dark:border-slate-800 bg-transparent"
               />
             </div>
             <div className="space-y-1 md:col-span-3">
@@ -549,7 +549,7 @@ ${config.signatario}`;
               <Input
                 value={config.horario1}
                 onChange={(e) => saveConfig("horario1", e.target.value)}
-                className="bg-slate-950 border-slate-850"
+                className="border-slate-200 dark:border-slate-800 bg-transparent"
               />
             </div>
             <div className="space-y-1 md:col-span-3">
@@ -557,7 +557,7 @@ ${config.signatario}`;
               <Input
                 value={config.horario2}
                 onChange={(e) => saveConfig("horario2", e.target.value)}
-                className="bg-slate-950 border-slate-850"
+                className="border-slate-200 dark:border-slate-800 bg-transparent"
               />
             </div>
           </CardContent>
@@ -565,15 +565,15 @@ ${config.signatario}`;
       )}
 
       {/* Seletores */}
-      <Card className="border-slate-850 bg-slate-900/40">
+      <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40">
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6">
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Funcionário</Label>
-            <Select value={selectedEmpId} onValueChange={(v) => setSelectedEmpId(v || "")}>
-              <SelectTrigger className="bg-slate-950 border-slate-850">
+            <Select key={activeEmployees.length} value={selectedEmpId} onValueChange={(v) => setSelectedEmpId(v || "")}>
+              <SelectTrigger className="w-full border-slate-200 dark:border-slate-800 bg-transparent">
                 <SelectValue placeholder="Selecione o funcionário" />
               </SelectTrigger>
-              <SelectContent className="bg-slate-950 border-slate-850">
+              <SelectContent>
                 {activeEmployees.map((e) => (
                   <SelectItem key={e.id} value={e.id}>
                     {e.name} {e.pagador ? `(${e.pagador})` : ""}
@@ -586,10 +586,10 @@ ${config.signatario}`;
           <div className="space-y-1.5 md:col-span-2">
             <Label className="text-xs text-muted-foreground">Tipo de E-mail</Label>
             <Select value={emailType} onValueChange={(v) => setEmailType(v || "admissao")}>
-              <SelectTrigger className="bg-slate-950 border-slate-850">
+              <SelectTrigger className="w-full border-slate-200 dark:border-slate-800 bg-transparent">
                 <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
-              <SelectContent className="bg-slate-950 border-slate-850">
+              <SelectContent>
                 {EMAIL_TYPES.map((t) => (
                   <SelectItem key={t.k} value={t.k}>
                     {t.t}
@@ -607,7 +607,7 @@ ${config.signatario}`;
                   type="month"
                   value={monthStr}
                   onChange={(e) => setMonthStr(e.target.value)}
-                  className="bg-slate-950 border-slate-850"
+                  className="border-slate-200 dark:border-slate-800 bg-transparent text-slate-850 dark:text-slate-250"
                 />
               </div>
               <div className="space-y-1.5 md:col-span-2">
@@ -618,7 +618,7 @@ ${config.signatario}`;
                   value={emailObs}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEmailObs(e.target.value)}
                   placeholder="Ex: 1ª quinzena de R$ 1.000,00 já paga; deduzir vale de R$ 150,00."
-                  className="flex min-h-[60px] w-full rounded-md border border-slate-850 bg-slate-950 px-3 py-2 text-sm text-slate-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+                  className="flex min-h-[60px] w-full rounded-md border border-slate-200 dark:border-slate-800 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-350 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none"
                 />
               </div>
             </>
@@ -629,8 +629,8 @@ ${config.signatario}`;
       {/* Pré-visualização */}
       {selectedEmp ? (
         emailContent && (
-          <Card className="border-slate-850 bg-slate-900/40">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-slate-850 py-4">
+          <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800 py-4">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <FileText className="h-4 w-4 text-blue-500" />
                 <span>
@@ -692,7 +692,7 @@ ${config.signatario}`;
           </Card>
         )
       ) : (
-        <Card className="border-slate-850 bg-slate-900/40">
+        <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40">
           <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <Mail className="h-8 w-8 mb-2 opacity-40" />
             <p>Cadastre um funcionário para gerar e-mails.</p>

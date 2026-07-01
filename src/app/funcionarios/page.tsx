@@ -1081,7 +1081,7 @@ Ianna - RH e Financeiro`;
 
       {/* ── Checklist Dialog ── */}
       <Dialog open={isChecklistOpen} onOpenChange={setIsChecklistOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
               Documentação — {checklistEmp?.name}

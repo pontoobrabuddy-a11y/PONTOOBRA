@@ -796,7 +796,6 @@ Ianna - RH e Financeiro`;
                     className="col-span-3"
                     value={formData.admission_date}
                     onChange={(e) => setFormData({ ...formData, admission_date: e.target.value })}
-                    disabled={!!editingId && formData.employment_type !== "Avulso"}
                   />
                 </div>
               </div>

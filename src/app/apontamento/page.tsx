@@ -53,7 +53,7 @@ export default function ApontamentoPage() {
 
   const markAllAs = (status: Status) => {
     const newDrafts: Record<string, AttendanceRecord> = {};
-    employees.forEach(emp => {
+    employees.filter(emp => emp.status !== "inativo").forEach(emp => {
       newDrafts[emp.id] = { ...(currentAttendance[emp.id] || {}), status };
     });
     setDraftAttendance(date, newDrafts);
@@ -75,7 +75,8 @@ export default function ApontamentoPage() {
   };
 
   const handleSave = () => {
-    const unrecorded = employees.filter(e => !currentAttendance[e.id] || currentAttendance[e.id].status === null);
+    const activeEmployees = employees.filter(emp => emp.status !== "inativo");
+    const unrecorded = activeEmployees.filter(e => !currentAttendance[e.id] || currentAttendance[e.id].status === null);
     if (unrecorded.length > 0) {
       alert(`Atenção: ${unrecorded.length} funcionários ainda não tiveram o apontamento preenchido.`);
       return;
@@ -86,8 +87,10 @@ export default function ApontamentoPage() {
   };
 
   const filteredEmployees = employees.filter(emp => 
-    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.team.toLowerCase().includes(searchTerm.toLowerCase())
+    emp.status !== "inativo" && (
+      emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.team.toLowerCase().includes(searchTerm.toLowerCase())
+    )
   );
 
   return (

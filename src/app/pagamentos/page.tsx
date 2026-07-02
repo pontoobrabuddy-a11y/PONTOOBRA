@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle, Clock, AlertCircle, Plus, Wallet, Trash2 } from "lucide-react";
+import { CheckCircle, Clock, AlertCircle, Plus, Wallet, Trash2, Edit2 } from "lucide-react";
 
 // ─── Types locais (compatíveis com o que o useStore deve exportar) ────────────
 
@@ -474,7 +474,6 @@ export default function PagamentosPage() {
     const net = valorContab > 0 ? Math.max(0, valorContab - q1Valor) : 0;
 
     if (existing) {
-      if (existing.paid) return;
       await updatePayment(existing.id, {
         gross_amount: valorContab,
         net_amount: net,
@@ -508,7 +507,6 @@ export default function PagamentosPage() {
     const net = Math.max(0, gross - desconto);
 
     if (existing) {
-      if (existing.paid) return;
       await updatePayment(existing.id, {
         gross_amount: gross,
         net_amount: net,
@@ -796,6 +794,27 @@ export default function PagamentosPage() {
                                   <Button
                                     size="sm"
                                     variant="ghost"
+                                    className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    title="Editar Data do Pagamento"
+                                    onClick={() =>
+                                      abrirDialog({
+                                        titulo: "Editar Data do Pagamento",
+                                        descricao: `Alterar a data de pagamento para ${emp.name}`,
+                                        onConfirm: async (newData) => {
+                                          if (pag?.id) {
+                                            await updatePayment(pag.id, {
+                                              paid_at: newData,
+                                            });
+                                          }
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <Edit2 className="size-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
                                     className="h-6 w-6 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                                     title="Excluir Pagamento (Estornar)"
                                     onClick={async () => {
@@ -890,7 +909,6 @@ export default function PagamentosPage() {
                                   onChange={(e) => updateLiquidoContab(emp.id, e.target.value)}
                                   onBlur={(e) => salvarLiquidoBanco(emp.id, e.target.value)}
                                   className="w-32 text-right mx-auto"
-                                  disabled={pago}
                                 />
                               )}
                             </td>
@@ -942,6 +960,27 @@ export default function PagamentosPage() {
                                   <span className="text-xs text-muted-foreground">
                                     em {pag?.paid_at ? new Date(pag.paid_at + "T12:00:00Z").toLocaleDateString("pt-BR") : ""}
                                   </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    title="Editar Data do Pagamento"
+                                    onClick={() =>
+                                      abrirDialog({
+                                        titulo: "Editar Data do Pagamento",
+                                        descricao: `Alterar a data de pagamento para ${emp.name}`,
+                                        onConfirm: async (newData) => {
+                                          if (pag?.id) {
+                                            await updatePayment(pag.id, {
+                                              paid_at: newData,
+                                            });
+                                          }
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <Edit2 className="size-3.5" />
+                                  </Button>
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -1079,7 +1118,7 @@ export default function PagamentosPage() {
                             onChange={(e) => updateDescontoBuddy(emp.id, e.target.value)}
                             onBlur={(e) => salvarDescontoBanco(emp.id, e.target.value)}
                             className="w-24 text-right mx-auto"
-                            disabled={pago}
+
                           />
                         </td>
                         <td className="px-3 py-2 text-right font-semibold text-emerald-700 dark:text-emerald-300">
@@ -1121,6 +1160,27 @@ export default function PagamentosPage() {
                           )}
                           {pago && (
                             <div className="flex items-center gap-1.5 justify-end">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                title="Editar Data do Pagamento"
+                                onClick={() =>
+                                  abrirDialog({
+                                    titulo: "Editar Data do Pagamento",
+                                    descricao: `Alterar a data de pagamento para ${emp.name}`,
+                                    onConfirm: async (newData) => {
+                                      if (pag?.id) {
+                                        await updatePayment(pag.id, {
+                                          paid_at: newData,
+                                        });
+                                      }
+                                    },
+                                  })
+                                }
+                              >
+                                <Edit2 className="size-3.5" />
+                              </Button>
                               <span className="text-xs text-muted-foreground">
                                 em {pag?.paid_at ? new Date(pag.paid_at + "T12:00:00Z").toLocaleDateString("pt-BR") : ""}
                               </span>

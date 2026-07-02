@@ -27,7 +27,8 @@ export default function RelatoriosPage() {
 
   // Calculate aggregated data for the selected month
   const reportData = useMemo(() => {
-    return employees.map(emp => {
+    const activeEmployees = employees.filter(emp => emp.status !== 'inativo');
+    return activeEmployees.map(emp => {
       let presences = 0;
       let half_presences = 0;
       let absences = 0;

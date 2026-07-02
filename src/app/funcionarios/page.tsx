@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Plus, Search, Edit2, Trash2, UserX, DollarSign,
+  Plus, Search, Edit2, Trash2, UserX, UserCheck, DollarSign,
   ClipboardList, Mail, ArrowUpDown, Hash, Copy, Check, Printer
 } from "lucide-react";
 
@@ -145,6 +145,7 @@ export default function FuncionariosPage() {
   // ── List state ──
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"number" | "name">("number");
+  const [onlyActive, setOnlyActive] = useState(true);
 
   // ── Main dialog ──
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -199,9 +200,11 @@ export default function FuncionariosPage() {
     const q = searchTerm.toLowerCase();
     const filtered = employees.filter(
       (emp) =>
-        emp.name.toLowerCase().includes(q) ||
-        (emp.cpf || "").includes(q) ||
-        (emp.role || "").toLowerCase().includes(q)
+        (!onlyActive || emp.status !== "inativo") && (
+          emp.name.toLowerCase().includes(q) ||
+          (emp.cpf || "").includes(q) ||
+          (emp.role || "").toLowerCase().includes(q)
+        )
     );
     if (sortBy === "name") {
       return [...filtered].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
@@ -211,7 +214,7 @@ export default function FuncionariosPage() {
       const nb = b.employee_number ?? 99999;
       return na - nb;
     });
-  }, [employees, searchTerm, sortBy]);
+  }, [employees, searchTerm, sortBy, onlyActive]);
 
   // ─── Dialog helpers ──────────────────────────────────────────────────────
 
@@ -562,15 +565,26 @@ Ianna - RH e Financeiro`;
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSortBy(sortBy === "number" ? "name" : "number")}
-              className="whitespace-nowrap"
-            >
-              <ArrowUpDown className="mr-2 h-4 w-4" />
-              {sortBy === "number" ? "Ordenar por Nome" : "Ordenar por Nº"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant={onlyActive ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => setOnlyActive(!onlyActive)}
+                className={`whitespace-nowrap ${onlyActive ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border-emerald-200" : ""}`}
+              >
+                <UserCheck className="mr-2 h-4 w-4" />
+                {onlyActive ? "Ver Somente Ativos" : "Ver Todos (incluir demitidos)"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSortBy(sortBy === "number" ? "name" : "number")}
+                className="whitespace-nowrap"
+              >
+                <ArrowUpDown className="mr-2 h-4 w-4" />
+                {sortBy === "number" ? "Ordenar por Nome" : "Ordenar por Nº"}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

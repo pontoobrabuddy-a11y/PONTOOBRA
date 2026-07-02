@@ -28,6 +28,15 @@ export default function ApontamentoPage() {
   const [activeEmpId, setActiveEmpId] = useState<string | null>(null);
   const [tempObs, setTempObs] = useState("");
 
+  const isWithinLast7DaysOfNotice = (emp: Employee, dateStr: string): boolean => {
+    if (emp.dismissal_type !== "empresa_com" || !emp.notice_end_date) return false;
+    const end = new Date(emp.notice_end_date + "T00:00:00");
+    const current = new Date(dateStr + "T00:00:00");
+    const start = new Date(end);
+    start.setDate(end.getDate() - 6);
+    return current >= start && current <= end;
+  };
+
   const currentAttendance = useMemo(() => {
     const loaded: Record<string, AttendanceRecord> = {};
     if (attendance[date]) {
@@ -39,13 +48,29 @@ export default function ApontamentoPage() {
         }
       });
     }
+
+    employees.forEach(emp => {
+      if (emp.status !== "inativo" && isWithinLast7DaysOfNotice(emp, date)) {
+        const currentDay = new Date(date + "T00:00:00");
+        const dayOfWeek = currentDay.getDay();
+        const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+        
+        if (!loaded[emp.id]) {
+          loaded[emp.id] = { 
+            status: isWeekday ? 'presence' : 'absence',
+            observation: isWeekday ? "Aviso Prévio (Dispensa de Trabalho)" : "Sábado/Domingo"
+          };
+        }
+      }
+    });
+
     if (draftAttendance[date]) {
       Object.entries(draftAttendance[date]).forEach(([id, record]) => {
         loaded[id] = { ...loaded[id], ...record };
       });
     }
     return loaded;
-  }, [date, attendance, draftAttendance]);
+  }, [date, attendance, draftAttendance, employees]);
 
   const handleStatusChange = (id: string, newStatus: Status) => {
     setDraftAttendance(date, { [id]: { ...(currentAttendance[id] || {}), status: newStatus } });

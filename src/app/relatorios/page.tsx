@@ -14,6 +14,7 @@ import { saveAs } from 'file-saver';
 export default function RelatoriosPage() {
   const { employees, attendance } = useStore();
   const [searchTerm, setSearchTerm] = useState("");
+  const [companyFilter, setCompanyFilter] = useState<'TODOS' | 'BUDDY' | 'CASANA'>('TODOS');
 
   const [monthStr, setMonthStr] = useState<string>("2026-06");
   const [viewMode, setViewMode] = useState<'resumo' | 'espelho'>('resumo');
@@ -60,7 +61,8 @@ export default function RelatoriosPage() {
 
   const filteredData = reportData.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
+    const matchesCompany = companyFilter === 'TODOS' || item.pagador === companyFilter;
+    return matchesSearch && matchesCompany;
   });
 
   const exportExcel = async () => {
@@ -259,6 +261,22 @@ export default function RelatoriosPage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
+            </div>
+
+            <div className="w-full md:w-[200px]">
+              <Select
+                value={companyFilter}
+                onValueChange={(v) => setCompanyFilter(v as 'TODOS' | 'BUDDY' | 'CASANA')}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Filtrar por Empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todas as Empresas</SelectItem>
+                  <SelectItem value="BUDDY">Somente BUDDY</SelectItem>
+                  <SelectItem value="CASANA">Somente CASANA</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="w-full md:w-[200px]">

@@ -175,6 +175,7 @@ export default function FuncionariosPage() {
   const [isEmailOpen, setIsEmailOpen] = useState(false);
   const [emailText, setEmailText] = useState("");
   const [emailCopySuccess, setEmailCopySuccess] = useState(false);
+  const [selectedSignature, setSelectedSignature] = useState<string>("Felipe Moura | Coordenador Administrativo e de Compras");
 
   // ─── Derived computed values ─────────────────────────────────────────────
 
@@ -468,7 +469,7 @@ export default function FuncionariosPage() {
 
   // ─── Email generator ─────────────────────────────────────────────────────
 
-  function buildAdmissaoEmail(emp: Employee): string {
+  function buildAdmissaoEmail(emp: Employee, signature: string): string {
     const pagadorInfo = emp.pagador ? PAGADOR_INFO[emp.pagador] : null;
     return `Assunto: Solicitação de Admissão - ${emp.name}
 
@@ -484,12 +485,12 @@ Observações:
 [CAMPO LIVRE]
 
 Atenciosamente,
-Ianna - RH e Financeiro
+${signature}
 ${pagadorInfo ? pagadorInfo.nome : ""}
 CNPJ: ${pagadorInfo ? pagadorInfo.cnpj : ""}`;
   }
 
-  function buildDemissaoEmail(emp: Employee): string {
+  function buildDemissaoEmail(emp: Employee, signature: string): string {
     const lastWork = calcLastWorkDate(emp);
     const situacaoMap: Record<string, string> = {
       pedido_com: "Pedido de demissão — com aviso",
@@ -519,13 +520,13 @@ Observações:
 [CAMPO LIVRE]
 
 Atenciosamente,
-Ianna - RH e Financeiro`;
+${signature}`;
   }
 
   const openEmailDialog = (emp: Employee, type: "admissao" | "demissao") => {
     setEmailEmp(emp);
     setEmailType(type);
-    setEmailText(type === "admissao" ? buildAdmissaoEmail(emp) : buildDemissaoEmail(emp));
+    setEmailText(type === "admissao" ? buildAdmissaoEmail(emp, selectedSignature) : buildDemissaoEmail(emp, selectedSignature));
     setEmailCopySuccess(false);
     setIsEmailOpen(true);
   };
@@ -1255,27 +1256,59 @@ Ianna - RH e Financeiro`;
           </DialogHeader>
           <div className="py-2 space-y-3">
             {emailEmp && (
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant={emailType === "admissao" ? "default" : "outline"}
-                  onClick={() => {
-                    setEmailType("admissao");
-                    setEmailText(buildAdmissaoEmail(emailEmp));
-                  }}
-                >
-                  E-mail Admissão
-                </Button>
-                <Button
-                  size="sm"
-                  variant={emailType === "demissao" ? "default" : "outline"}
-                  onClick={() => {
-                    setEmailType("demissao");
-                    setEmailText(buildDemissaoEmail(emailEmp));
-                  }}
-                >
-                  E-mail Demissão
-                </Button>
+              <div className="flex flex-col sm:flex-row gap-3 items-center">
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={emailType === "admissao" ? "default" : "outline"}
+                    onClick={() => {
+                      setEmailType("admissao");
+                      setEmailText(buildAdmissaoEmail(emailEmp, selectedSignature));
+                    }}
+                  >
+                    E-mail Admissão
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={emailType === "demissao" ? "default" : "outline"}
+                    onClick={() => {
+                      setEmailType("demissao");
+                      setEmailText(buildDemissaoEmail(emailEmp, selectedSignature));
+                    }}
+                  >
+                    E-mail Demissão
+                  </Button>
+                </div>
+                <div className="flex-1 w-full">
+                   <Select
+                    value={selectedSignature}
+                    onValueChange={(v) => {
+                      const sig = v || "";
+                      setSelectedSignature(sig);
+                      setEmailText(
+                        emailType === "admissao"
+                          ? buildAdmissaoEmail(emailEmp, sig)
+                          : buildDemissaoEmail(emailEmp, sig)
+                      );
+                    }}
+                  >
+                    <SelectTrigger className="w-full flex justify-between items-center text-left text-xs h-9">
+                      <span>
+                        {selectedSignature === "Felipe Moura | Coordenador Administrativo e de Compras" && "Assinatura: Felipe Moura"}
+                        {selectedSignature === "Iana Raissa | Analista de RH e Financeiro" && "Assinatura: Iana Raissa"}
+                        {!selectedSignature && "Selecione a assinatura"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Felipe Moura | Coordenador Administrativo e de Compras">
+                        Felipe Moura | Coordenador Administrativo e de Compras
+                      </SelectItem>
+                      <SelectItem value="Iana Raissa | Analista de RH e Financeiro">
+                        Iana Raissa | Analista de RH e Financeiro
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             )}
             <textarea

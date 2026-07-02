@@ -291,12 +291,9 @@ export default function PagamentosPage() {
         p.period_month === mesSelecionado &&
         p.period_year === anoSelecionado
       ) {
-        const emp = employees.find(e => e.id === p.employee_id);
-        if (emp && emp.salary !== undefined) {
-          const discountVal = emp.salary - p.net_amount;
-          if (discountVal > 0) {
-            dbData[p.employee_id] = String(discountVal);
-          }
+        const discountVal = p.gross_amount - p.net_amount;
+        if (discountVal > 0) {
+          dbData[p.employee_id] = String(discountVal);
         }
       }
     });
@@ -417,6 +414,74 @@ export default function PagamentosPage() {
         net_amount: valorBase,
         paid: true,
         paid_at: dataPagamento,
+      });
+    }
+  }
+
+  async function salvarLiquidoBanco(employeeId: string, val: string) {
+    const valorContab = parseFloat(val.replace(",", ".")) || 0;
+
+    const existing = storePayments.find(
+      (sp) =>
+        sp.employee_id === employeeId &&
+        sp.payment_type === "quinzena2" &&
+        sp.period_month === mesSelecionado &&
+        sp.period_year === anoSelecionado
+    );
+
+    const emp = employees.find(e => e.id === employeeId);
+    const q1Valor = (emp?.salary || 0) / 2;
+    const net = valorContab > 0 ? Math.max(0, valorContab - q1Valor) : 0;
+
+    if (existing) {
+      if (existing.paid) return;
+      await updatePayment(existing.id, {
+        gross_amount: valorContab,
+        net_amount: net,
+      });
+    } else if (valorContab > 0) {
+      await addPayment({
+        employee_id: employeeId,
+        period_month: mesSelecionado,
+        period_year: anoSelecionado,
+        payment_type: "quinzena2",
+        gross_amount: valorContab,
+        net_amount: net,
+        paid: false,
+      });
+    }
+  }
+
+  async function salvarDescontoBanco(employeeId: string, val: string) {
+    const desconto = parseFloat(val.replace(",", ".")) || 0;
+    
+    const existing = storePayments.find(
+      (sp) =>
+        sp.employee_id === employeeId &&
+        sp.payment_type === "mensal" &&
+        sp.period_month === mesSelecionado &&
+        sp.period_year === anoSelecionado
+    );
+
+    const emp = employees.find(e => e.id === employeeId);
+    const gross = (emp?.salary || 0);
+    const net = Math.max(0, gross - desconto);
+
+    if (existing) {
+      if (existing.paid) return;
+      await updatePayment(existing.id, {
+        gross_amount: gross,
+        net_amount: net,
+      });
+    } else {
+      await addPayment({
+        employee_id: employeeId,
+        period_month: mesSelecionado,
+        period_year: anoSelecionado,
+        payment_type: "mensal",
+        gross_amount: gross,
+        net_amount: net,
+        paid: false,
       });
     }
   }
@@ -783,6 +848,7 @@ export default function PagamentosPage() {
                                   placeholder="Aguardando folha"
                                   value={liquidoStr}
                                   onChange={(e) => updateLiquidoContab(emp.id, e.target.value)}
+                                  onBlur={(e) => salvarLiquidoBanco(emp.id, e.target.value)}
                                   className="w-32 text-right mx-auto"
                                   disabled={pago}
                                 />
@@ -971,6 +1037,7 @@ export default function PagamentosPage() {
                             placeholder="0,00"
                             value={descontoBuddy[emp.id] || ""}
                             onChange={(e) => updateDescontoBuddy(emp.id, e.target.value)}
+                            onBlur={(e) => salvarDescontoBanco(emp.id, e.target.value)}
                             className="w-24 text-right mx-auto"
                             disabled={pago}
                           />

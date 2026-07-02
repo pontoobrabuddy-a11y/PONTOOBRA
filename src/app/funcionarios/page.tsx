@@ -597,9 +597,26 @@ ${signature}`;
           <h1 className="text-3xl font-bold tracking-tight text-primary">Funcionários</h1>
           <p className="text-muted-foreground mt-1">Gerencie os trabalhadores da obra.</p>
         </div>
-        <Button onClick={openAddDialog} className="bg-primary hover:bg-primary/90 text-white">
-          <Plus className="mr-2 h-4 w-4" /> Novo Funcionário
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const firstEmp = employees.find(e => e.status !== "inativo") || employees[0];
+              if (firstEmp) {
+                openChecklist(firstEmp);
+              } else {
+                setIsChecklistOpen(true);
+              }
+            }}
+            className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold h-9 text-xs"
+          >
+            <ClipboardList className="mr-1.5 h-3.5 w-3.5 text-blue-500" /> Checklist de documentos
+          </Button>
+          <Button onClick={openAddDialog} className="bg-primary hover:bg-primary/90 text-white h-9 text-xs sm:text-sm">
+            <Plus className="mr-2 h-4 w-4" /> Novo Funcionário
+          </Button>
+        </div>
       </div>
 
       {/* Tabs for Ativos vs Demitidos */}
@@ -710,22 +727,6 @@ ${signature}`;
                             title="Histórico Salarial"
                           >
                             <DollarSign className="h-4 w-4 text-emerald-600" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openChecklist(emp)}
-                            title="Checklist de Documentos"
-                          >
-                            <ClipboardList className="h-4 w-4 text-blue-500" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEmailDialog(emp, emp.status === "inativo" || emp.status === "aviso_previo" ? "demissao" : "admissao")}
-                            title="Gerar E-mail"
-                          >
-                            <Mail className="h-4 w-4 text-purple-500" />
                           </Button>
                           {emp.status === "ativo" && (
                             <Button
@@ -1253,9 +1254,32 @@ ${signature}`;
       <Dialog open={isChecklistOpen} onOpenChange={setIsChecklistOpen}>
         <DialogContent className="sm:max-w-4xl p-6">
           <DialogHeader className="pb-2">
-            <DialogTitle className="text-xl font-bold">
-              Documentação — {checklistEmp?.name}
-            </DialogTitle>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <DialogTitle className="text-xl font-bold">
+                Checklist de Documentação — Admissão
+              </DialogTitle>
+              <div className="flex items-center gap-2 max-w-xs w-full mr-6">
+                <Label className="text-xs shrink-0 font-semibold text-slate-500">Funcionário:</Label>
+                <Select
+                  value={checklistEmp?.id || ""}
+                  onValueChange={(v) => {
+                    const emp = employees.find(e => e.id === v);
+                    if (emp) openChecklist(emp);
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800">
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.filter(e => e.status !== "inativo").map(e => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </DialogHeader>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-3">

@@ -251,7 +251,7 @@ export default function PagamentosPage() {
   useEffect(() => {
     const key = `liquido_contab_${mesSelecionado}_${anoSelecionado}`;
     const saved = localStorage.getItem(key);
-    const localData = saved ? JSON.parse(saved) : {};
+    const localData: Record<string, string> = saved ? JSON.parse(saved) : {};
     
     const dbData: Record<string, string> = {};
     storePayments.forEach((p) => {
@@ -263,9 +263,29 @@ export default function PagamentosPage() {
         dbData[p.employee_id] = String(p.gross_amount);
       }
     });
+
+    // Sincronizar dados locais antigos para o banco Supabase
+    Object.entries(localData).forEach(async ([empId, val]) => {
+      const valor = parseFloat(val.replace(",", ".")) || 0;
+      if (valor > 0 && !dbData[empId]) {
+        const emp = employees.find(e => e.id === empId);
+        const q1Valor = (emp?.salary || 0) / 2;
+        const net = Math.max(0, valor - q1Valor);
+        
+        await addPayment({
+          employee_id: empId,
+          period_month: mesSelecionado,
+          period_year: anoSelecionado,
+          payment_type: "quinzena2",
+          gross_amount: valor,
+          net_amount: net,
+          paid: false,
+        });
+      }
+    });
     
     setLiquidoContab({ ...localData, ...dbData });
-  }, [mesSelecionado, anoSelecionado, storePayments]);
+  }, [mesSelecionado, anoSelecionado, storePayments, employees]);
 
   const updateLiquidoContab = (employeeId: string, val: string) => {
     setLiquidoContab(prev => {
@@ -282,7 +302,7 @@ export default function PagamentosPage() {
   useEffect(() => {
     const key = `desconto_buddy_${mesSelecionado}_${anoSelecionado}`;
     const saved = localStorage.getItem(key);
-    const localData = saved ? JSON.parse(saved) : {};
+    const localData: Record<string, string> = saved ? JSON.parse(saved) : {};
     
     const dbData: Record<string, string> = {};
     storePayments.forEach((p) => {
@@ -295,6 +315,26 @@ export default function PagamentosPage() {
         if (discountVal > 0) {
           dbData[p.employee_id] = String(discountVal);
         }
+      }
+    });
+
+    // Sincronizar descontos locais antigos para o banco Supabase
+    Object.entries(localData).forEach(async ([empId, val]) => {
+      const discount = parseFloat(val.replace(",", ".")) || 0;
+      if (discount > 0 && !dbData[empId]) {
+        const emp = employees.find(e => e.id === empId);
+        const gross = (emp?.salary || 0);
+        const net = Math.max(0, gross - discount);
+
+        await addPayment({
+          employee_id: empId,
+          period_month: mesSelecionado,
+          period_year: anoSelecionado,
+          payment_type: "mensal",
+          gross_amount: gross,
+          net_amount: net,
+          paid: false,
+        });
       }
     });
 

@@ -68,7 +68,8 @@ interface Tax {
   paid_at?: string;
   competencia_mes: number;
   competencia_ano: number;
-  status: "pago" | "vencido" | "a_vencer";
+  status: "pago" | "vencido" | "a_vencer" | "pendente";
+  isVirtual?: boolean;
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -85,7 +86,14 @@ const BUDDY_CNPJ = "45.689.000/0001-89";
 const CASANA_EMPRESA = "BUDDY & GENECY CONSTRUTORA LTDA";
 const CASANA_CNPJ = "50.251.097/0001-83";
 
+const PREDEFINED_TAXES = [
+  "GFD - Guia do FGTS Digital",
+  "Guia do INSS DARF",
+  "Guia do SIMPLES NACIONAL DASN"
+];
+
 const IMPOSTOS_SUGERIDOS = [
+  ...PREDEFINED_TAXES,
   "GFD - Guia FGTS Digital",
   "DARF INSS",
   "Simples Nacional",
@@ -102,7 +110,8 @@ function getTodayISO() {
   return new Date().toISOString().split("T")[0];
 }
 
-function getTaxStatus(tax: Tax): "pago" | "vencido" | "a_vencer" {
+function getTaxStatus(tax: Tax & { isVirtual?: boolean }): "pago" | "vencido" | "a_vencer" | "pendente" {
+  if (tax.isVirtual) return "pendente";
   if (tax.paid_at) return "pago";
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
@@ -238,8 +247,71 @@ export default function PagamentosPage() {
 
   // ── Liquidez contabilidade por employee (Q2) ───────────────────────────────
   const [liquidoContab, setLiquidoContab] = useState<Record<string, string>>({});
+  
+  useEffect(() => {
+    const key = `liquido_contab_${mesSelecionado}_${anoSelecionado}`;
+    const saved = localStorage.getItem(key);
+    const localData = saved ? JSON.parse(saved) : {};
+    
+    const dbData: Record<string, string> = {};
+    storePayments.forEach((p) => {
+      if (
+        p.payment_type === "quinzena2" &&
+        p.period_month === mesSelecionado &&
+        p.period_year === anoSelecionado
+      ) {
+        dbData[p.employee_id] = String(p.gross_amount);
+      }
+    });
+    
+    setLiquidoContab({ ...localData, ...dbData });
+  }, [mesSelecionado, anoSelecionado, storePayments]);
+
+  const updateLiquidoContab = (employeeId: string, val: string) => {
+    setLiquidoContab(prev => {
+      const updated = { ...prev, [employeeId]: val };
+      const key = `liquido_contab_${mesSelecionado}_${anoSelecionado}`;
+      localStorage.setItem(key, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // ── Descontos BUDDY por employee ───────────────────────────────────────────
   const [descontoBuddy, setDescontoBuddy] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const key = `desconto_buddy_${mesSelecionado}_${anoSelecionado}`;
+    const saved = localStorage.getItem(key);
+    const localData = saved ? JSON.parse(saved) : {};
+    
+    const dbData: Record<string, string> = {};
+    storePayments.forEach((p) => {
+      if (
+        p.payment_type === "mensal" &&
+        p.period_month === mesSelecionado &&
+        p.period_year === anoSelecionado
+      ) {
+        const emp = employees.find(e => e.id === p.employee_id);
+        if (emp && emp.salary !== undefined) {
+          const discountVal = emp.salary - p.net_amount;
+          if (discountVal > 0) {
+            dbData[p.employee_id] = String(discountVal);
+          }
+        }
+      }
+    });
+
+    setDescontoBuddy({ ...localData, ...dbData });
+  }, [mesSelecionado, anoSelecionado, storePayments, employees]);
+
+  const updateDescontoBuddy = (employeeId: string, val: string) => {
+    setDescontoBuddy(prev => {
+      const updated = { ...prev, [employeeId]: val };
+      const key = `desconto_buddy_${mesSelecionado}_${anoSelecionado}`;
+      localStorage.setItem(key, JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   // ── Dialog state ───────────────────────────────────────────────────────────
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -258,6 +330,7 @@ export default function PagamentosPage() {
     vencimento: "",
     competencia_mes: mesSelecionado,
     competencia_ano: anoSelecionado,
+    pago_em: "",
   });
 
   // ── Filtros ────────────────────────────────────────────────────────────────
@@ -270,14 +343,30 @@ export default function PagamentosPage() {
     [employees]
   );
 
-  const impostosFiltrados = useMemo(
-    () =>
-      impostos.filter(
-        (t) =>
-          t.competencia_mes === mesSelecionado && t.competencia_ano === anoSelecionado
-      ),
-    [impostos, mesSelecionado, anoSelecionado]
-  );
+  const impostosFiltrados = useMemo(() => {
+    const actual = impostos.filter(
+      (t) =>
+        t.competencia_mes === mesSelecionado && t.competencia_ano === anoSelecionado
+    );
+    const results = [...actual];
+    PREDEFINED_TAXES.forEach(name => {
+      const exists = actual.some(t => t.name === name);
+      if (!exists) {
+        results.push({
+          id: `virtual-${name}`,
+          name,
+          empresa: 'BUDDY', // Default empresa
+          valor: 0,
+          vencimento: '',
+          competencia_mes: mesSelecionado,
+          competencia_ano: anoSelecionado,
+          isVirtual: true,
+          status: 'a_vencer'
+        } as any);
+      }
+    });
+    return results;
+  }, [impostos, mesSelecionado, anoSelecionado]);
 
   // ── Helpers de pagamento ───────────────────────────────────────────────────
   function getPagamento(employeeId: string, type: Payment["type"]): Payment | undefined {
@@ -306,11 +395,17 @@ export default function PagamentosPage() {
         sp.period_year === anoSelecionado
     );
     
+    const storeExtra: any = {};
+    if (extra?.valor_contabilidade !== undefined) {
+      storeExtra.gross_amount = extra.valor_contabilidade;
+    }
+
     if (existing) {
       await updatePayment(existing.id, {
         paid: true,
         paid_at: dataPagamento,
         net_amount: valorBase,
+        ...storeExtra
       });
     } else {
       await addPayment({
@@ -318,7 +413,7 @@ export default function PagamentosPage() {
         period_month: mesSelecionado,
         period_year: anoSelecionado,
         payment_type: mappedType,
-        gross_amount: valorBase,
+        gross_amount: storeExtra.gross_amount !== undefined ? storeExtra.gross_amount : valorBase,
         net_amount: valorBase,
         paid: true,
         paid_at: dataPagamento,
@@ -348,10 +443,9 @@ export default function PagamentosPage() {
       if (isAvulso) {
         return acc + (e.salary || 0) * diasQ2;
       }
-      const q1Pago = getPagamento(e.id, "casana_q1");
       const liquido = parseFloat((liquidoContab[e.id] || "").replace(",", ".")) || 0;
       const q1Valor = (e.salary || 0) / 2;
-      return acc + Math.max(0, liquido - (q1Pago ? q1Valor : 0));
+      return acc + Math.max(0, liquido - q1Valor);
     }, 0);
   }, [casanaEmployees, liquidoContab, pagamentos, mesSelecionado, anoSelecionado, attendance]);
 
@@ -377,6 +471,7 @@ export default function PagamentosPage() {
       due_date: novoImposto.vencimento,
       competence_month: mesSelecionado,
       competence_year: anoSelecionado,
+      paid_at: novoImposto.pago_em || undefined,
     });
     setNovoImpostoOpen(false);
     setNovoImposto({
@@ -386,6 +481,7 @@ export default function PagamentosPage() {
       vencimento: "",
       competencia_mes: mesSelecionado,
       competencia_ano: anoSelecionado,
+      pago_em: "",
     });
   }
 
@@ -663,7 +759,7 @@ export default function PagamentosPage() {
                         const liquido = parseFloat(liquidoStr.replace(",", ".")) || 0;
                         const valorQ2 = isAvulso 
                           ? (emp.salary || 0) * diasQ2
-                          : (liquido > 0 ? Math.max(0, liquido - (q1Pago ? q1Valor : 0)) : 0);
+                          : (liquido > 0 ? Math.max(0, liquido - q1Valor) : 0);
                         const pag = getPagamento(emp.id, "casana_q2");
                         const pago = pag?.status === "pago";
 
@@ -686,12 +782,7 @@ export default function PagamentosPage() {
                                   type="text"
                                   placeholder="Aguardando folha"
                                   value={liquidoStr}
-                                  onChange={(e) =>
-                                    setLiquidoContab((prev) => ({
-                                      ...prev,
-                                      [emp.id]: e.target.value,
-                                    }))
-                                  }
+                                  onChange={(e) => updateLiquidoContab(emp.id, e.target.value)}
                                   className="w-32 text-right mx-auto"
                                   disabled={pago}
                                 />
@@ -731,7 +822,7 @@ export default function PagamentosPage() {
                                       descricao: `Marcar ${emp.name} como pago: ${formatMoney(valorQ2)}`,
                                       onConfirm: (data) =>
                                         marcarComoPago(emp.id, "casana_q2", valorQ2, data, {
-                                          valor_contabilidade: isAvulso ? undefined : liquido,
+                                          valor_contabilidade: isAvulso ? valorQ2 : liquido,
                                         }),
                                     })
                                   }
@@ -879,12 +970,7 @@ export default function PagamentosPage() {
                             type="text"
                             placeholder="0,00"
                             value={descontoBuddy[emp.id] || ""}
-                            onChange={(e) =>
-                              setDescontoBuddy((prev) => ({
-                                ...prev,
-                                [emp.id]: e.target.value,
-                              }))
-                            }
+                            onChange={(e) => updateDescontoBuddy(emp.id, e.target.value)}
                             className="w-24 text-right mx-auto"
                             disabled={pago}
                           />
@@ -1053,27 +1139,39 @@ export default function PagamentosPage() {
                       <tr key={tax.id} className="border-t hover:bg-muted/30 transition-colors">
                         <td className="px-3 py-2 font-medium">{tax.name}</td>
                         <td className="px-3 py-2 hidden md:table-cell">
-                          <Badge
-                            variant="outline"
-                            className={
-                              tax.empresa === "BUDDY"
-                                ? "text-emerald-700 border-emerald-300"
-                                : tax.empresa === "CASANA"
-                                ? "text-blue-700 border-blue-300"
-                                : "text-purple-700 border-purple-300"
-                            }
-                          >
-                            {tax.empresa}
-                          </Badge>
+                          {tax.isVirtual ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className={
+                                tax.empresa === "BUDDY"
+                                  ? "text-emerald-700 border-emerald-300"
+                                  : tax.empresa === "CASANA"
+                                  ? "text-blue-700 border-blue-300"
+                                  : "text-purple-700 border-purple-300"
+                              }
+                            >
+                              {tax.empresa}
+                            </Badge>
+                          )}
                         </td>
                         <td className="px-3 py-2 hidden md:table-cell text-muted-foreground">
                           {MESES[tax.competencia_mes - 1]?.substring(0, 3)}/{tax.competencia_ano}
                         </td>
                         <td className="px-3 py-2 text-right font-semibold">
-                          {formatMoney(tax.valor)}
+                          {tax.isVirtual ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            formatMoney(tax.valor)
+                          )}
                         </td>
                         <td className="px-3 py-2 text-center text-muted-foreground">
-                          {new Date(tax.vencimento + "T12:00:00Z").toLocaleDateString("pt-BR")}
+                          {tax.isVirtual || !tax.vencimento ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            new Date(tax.vencimento + "T12:00:00Z").toLocaleDateString("pt-BR")
+                          )}
                         </td>
                         <td className="px-3 py-2 text-center text-muted-foreground hidden lg:table-cell">
                           {tax.paid_at
@@ -1099,38 +1197,68 @@ export default function PagamentosPage() {
                               A Vencer
                             </Badge>
                           )}
+                          {statusReal === "pendente" && (
+                            <Badge className="bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-200">
+                              <AlertCircle className="size-3" />
+                              Pendente
+                            </Badge>
+                          )}
                         </td>
-                        <td className="px-3 py-2">
-                          {statusReal !== "pago" && (
+                        <td className="px-3 py-2 text-right">
+                          {tax.isVirtual ? (
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="text-xs"
-                              onClick={() =>
-                                abrirDialog({
-                                  titulo: "Confirmar Pagamento de Imposto",
-                                  descricao: `Marcar "${tax.name}" como pago: ${formatMoney(tax.valor)}`,
-                                  onConfirm: (data) => marcarImpostoPago(tax.id, data),
-                                })
-                              }
+                              className="text-xs bg-primary hover:bg-primary/90 text-white"
+                              onClick={() => {
+                                setNovoImposto({
+                                  name: tax.name,
+                                  empresa: "BUDDY",
+                                  valor: "",
+                                  vencimento: "",
+                                  competencia_mes: mesSelecionado,
+                                  competencia_ano: anoSelecionado,
+                                  pago_em: "",
+                                });
+                                setNovoImpostoOpen(true);
+                              }}
                             >
-                              <CheckCircle className="size-3" />
-                              Marcar Pago
+                              <Plus className="size-3" />
+                              Registrar / Pagar
                             </Button>
+                          ) : (
+                            <div className="flex items-center justify-end">
+                              {statusReal !== "pago" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs"
+                                  onClick={() =>
+                                    abrirDialog({
+                                      titulo: "Confirmar Pagamento de Imposto",
+                                      descricao: `Marcar "${tax.name}" como pago: ${formatMoney(tax.valor)}`,
+                                      onConfirm: (data) => marcarImpostoPago(tax.id, data),
+                                    })
+                                  }
+                                >
+                                  <CheckCircle className="size-3" />
+                                  Marcar Pago
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 ml-2 inline-flex items-center justify-center"
+                                title="Excluir Imposto"
+                                onClick={async () => {
+                                  if (confirm(`Deseja excluir o imposto "${tax.name}"?`)) {
+                                    await deleteTax(tax.id);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </div>
                           )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 ml-2 inline-flex items-center justify-center"
-                            title="Excluir Imposto"
-                            onClick={async () => {
-                              if (confirm(`Deseja excluir o imposto "${tax.name}"?`)) {
-                                await deleteTax(tax.id);
-                              }
-                            }}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
                         </td>
                       </tr>
                     );
@@ -1277,6 +1405,18 @@ export default function PagamentosPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* Pago em (opcional) */}
+            <div className="space-y-1">
+              <Label>Pago em (Data de Pagamento - Opcional)</Label>
+              <Input
+                type="date"
+                value={novoImposto.pago_em}
+                onChange={(e) =>
+                  setNovoImposto((p) => ({ ...p, pago_em: e.target.value }))
+                }
+              />
             </div>
           </div>
 

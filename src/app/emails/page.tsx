@@ -59,7 +59,7 @@ export default function EmailsPage() {
   // Configuração contabilidade e assinatura
   const [config, setConfig] = useState({
     contabilidade: "Foxtrot",
-    signatario: "Felipe Moura | Coordenador Administrativo e de Compras",
+    signatario: "Felipe Moura | Coordenador de Compras e Administrativo",
     cargaHoraria: "44 horas semanais",
     horario1: "Segunda a quinta-feira: 07:00 às 12:00 / 13:00 às 17:00",
     horario2: "Sexta-feira: 07:00 às 12:00 / 13:00 às 16:00",
@@ -538,16 +538,16 @@ ${config.signatario}`;
               >
                 <SelectTrigger className="border-slate-200 dark:border-slate-800 bg-transparent flex justify-between items-center text-left">
                   <span>
-                    {config.signatario === "Felipe Moura | Coordenador Administrativo e de Compras" && "Felipe Moura"}
+                    {config.signatario === "Felipe Moura | Coordenador de Compras e Administrativo" && "Felipe Moura"}
                     {config.signatario === "Iana Raissa | Analista de RH e Financeiro" && "Iana Raissa"}
-                    {config.signatario !== "Felipe Moura | Coordenador Administrativo e de Compras" && 
+                    {config.signatario !== "Felipe Moura | Coordenador de Compras e Administrativo" && 
                      config.signatario !== "Iana Raissa | Analista de RH e Financeiro" && 
                      (config.signatario || "Selecione a assinatura")}
                   </span>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Felipe Moura | Coordenador Administrativo e de Compras">
-                    Felipe Moura | Coordenador Administrativo e de Compras
+                  <SelectItem value="Felipe Moura | Coordenador de Compras e Administrativo">
+                    Felipe Moura | Coordenador de Compras e Administrativo
                   </SelectItem>
                   <SelectItem value="Iana Raissa | Analista de RH e Financeiro">
                     Iana Raissa | Analista de RH e Financeiro

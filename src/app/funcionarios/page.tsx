@@ -175,7 +175,7 @@ export default function FuncionariosPage() {
   const [isEmailOpen, setIsEmailOpen] = useState(false);
   const [emailText, setEmailText] = useState("");
   const [emailCopySuccess, setEmailCopySuccess] = useState(false);
-  const [selectedSignature, setSelectedSignature] = useState<string>("Felipe Moura | Coordenador Administrativo e de Compras");
+  const [selectedSignature, setSelectedSignature] = useState<string>("Felipe Moura | Coordenador de Compras e Administrativo");
 
   // ─── Derived computed values ─────────────────────────────────────────────
 
@@ -211,9 +211,15 @@ export default function FuncionariosPage() {
       return [...filtered].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     }
     return [...filtered].sort((a, b) => {
-      const na = a.employee_number ?? 99999;
-      const nb = b.employee_number ?? 99999;
-      return na - nb;
+      const numA = parseInt(a.employee_number || "", 10);
+      const numB = parseInt(b.employee_number || "", 10);
+      const isNumA = !isNaN(numA);
+      const isNumB = !isNaN(numB);
+      
+      if (isNumA && isNumB) return numA - numB;
+      if (isNumA) return -1;
+      if (isNumB) return 1;
+      return (a.employee_number || "").localeCompare(b.employee_number || "");
     });
   }, [employees, searchTerm, sortBy, onlyActive]);
 
@@ -289,7 +295,7 @@ export default function FuncionariosPage() {
       team: formData.team || "Geral",
       admission_date: formData.admission_date || "",
       status: (formData.status as Employee["status"]) || "ativo",
-      employee_number: formData.employee_number ? Number(formData.employee_number) : undefined,
+      employee_number: formData.employee_number || undefined,
       employment_type: (formData.employment_type as Employee["employment_type"]) || undefined,
       pagador: (formData.pagador as Employee["pagador"]) || undefined,
       salary: formData.salary ? Number(formData.salary) : undefined,
@@ -552,30 +558,29 @@ ${signature}`;
         </Button>
       </div>
 
-      {/* List Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista de Funcionários</CardTitle>
-          <div className="flex flex-col sm:flex-row gap-3 pt-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nome, CPF/CNPJ ou cargo..."
-                className="pl-8"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant={onlyActive ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => setOnlyActive(!onlyActive)}
-                className={`whitespace-nowrap ${onlyActive ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border-emerald-200" : ""}`}
-              >
-                <UserCheck className="mr-2 h-4 w-4" />
-                {onlyActive ? "Ver Somente Ativos" : "Ver Todos (incluir demitidos)"}
-              </Button>
+      {/* Tabs for Ativos vs Demitidos */}
+      <Tabs defaultValue="ativos" value={onlyActive ? "ativos" : "demitidos"} onValueChange={(v) => setOnlyActive(v === "ativos")} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsTrigger value="ativos" className="font-semibold">Funcionários Ativos</TabsTrigger>
+          <TabsTrigger value="demitidos" className="font-semibold">Funcionários Demitidos</TabsTrigger>
+        </TabsList>
+
+        {/* List Card */}
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>
+              {onlyActive ? "Lista de Funcionários Ativos" : "Lista de Funcionários Demitidos"}
+            </CardTitle>
+            <div className="flex flex-col sm:flex-row gap-3 pt-3">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nome, CPF/CNPJ ou cargo..."
+                  className="pl-8"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
               <Button
                 variant="outline"
                 size="sm"
@@ -586,15 +591,14 @@ ${signature}`;
                 {sortBy === "number" ? "Ordenar por Nome" : "Ordenar por Nº"}
               </Button>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-slate-50 dark:bg-slate-900">
-                <TableRow>
-                  <TableHead className="w-12"><Hash className="h-4 w-4" /></TableHead>
-                  <TableHead>Nome</TableHead>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader className="bg-slate-50 dark:bg-slate-900">
+                  <TableRow>
+                    <TableHead className="w-12"><Hash className="h-4 w-4" /></TableHead>
+                    <TableHead>Nome</TableHead>
                   <TableHead className="hidden lg:table-cell">Cargo</TableHead>
                   <TableHead className="hidden xl:table-cell">Pagador</TableHead>
                   <TableHead className="hidden xl:table-cell">Tipo</TableHead>
@@ -690,6 +694,7 @@ ${signature}`;
           </div>
         </CardContent>
       </Card>
+      </Tabs>
 
       {/* ── Main Add/Edit Dialog ── */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -714,18 +719,16 @@ ${signature}`;
             <TabsContent value="pessoal">
               <div className="grid gap-4 py-4">
                 {/* Nº Contabilidade */}
-                {formData.employment_type !== "Avulso" && (
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label className="text-right text-sm">Nº Contab.</Label>
-                    <Input
-                      type="number"
-                      className="col-span-3"
-                      placeholder="Ex: 42"
-                      value={formData.employee_number}
-                      onChange={(e) => setFormData({ ...formData, employee_number: e.target.value })}
-                    />
-                  </div>
-                )}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Nº Contab.</Label>
+                  <Input
+                    type="text"
+                    className="col-span-3"
+                    placeholder="Ex: 42, S/N ou 0"
+                    value={formData.employee_number}
+                    onChange={(e) => setFormData({ ...formData, employee_number: e.target.value })}
+                  />
+                </div>
                 {/* Nome */}
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right text-sm">Nome *</Label>
@@ -826,11 +829,12 @@ ${signature}`;
                     value={formData.employment_type}
                     onValueChange={(v) => {
                       const newType = v || "";
+                      const defaultNum = (newType === "Avulso" || newType === "PJ") ? "S/N" : formData.employee_number;
                       setFormData({
                         ...formData,
                         employment_type: newType,
+                        employee_number: defaultNum,
                         ...(newType === "PJ" ? { salary_family: false } : {}),
-                        ...(newType === "Avulso" ? { employee_number: "" } : {}),
                       });
                     }}
                   >
@@ -1294,14 +1298,14 @@ ${signature}`;
                   >
                     <SelectTrigger className="w-full flex justify-between items-center text-left text-xs h-9">
                       <span>
-                        {selectedSignature === "Felipe Moura | Coordenador Administrativo e de Compras" && "Assinatura: Felipe Moura"}
+                        {selectedSignature === "Felipe Moura | Coordenador de Compras e Administrativo" && "Assinatura: Felipe Moura"}
                         {selectedSignature === "Iana Raissa | Analista de RH e Financeiro" && "Assinatura: Iana Raissa"}
                         {!selectedSignature && "Selecione a assinatura"}
                       </span>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Felipe Moura | Coordenador Administrativo e de Compras">
-                        Felipe Moura | Coordenador Administrativo e de Compras
+                      <SelectItem value="Felipe Moura | Coordenador de Compras e Administrativo">
+                        Felipe Moura | Coordenador de Compras e Administrativo
                       </SelectItem>
                       <SelectItem value="Iana Raissa | Analista de RH e Financeiro">
                         Iana Raissa | Analista de RH e Financeiro

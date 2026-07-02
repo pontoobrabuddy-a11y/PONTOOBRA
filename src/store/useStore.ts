@@ -13,7 +13,7 @@ export interface Employee {
   status: EmployeeStatus;
   team: string;
   // Novos campos — todos opcionais
-  employee_number?: number;
+  employee_number?: string;
   nickname?: string;
   salary?: number;
   pagador?: 'BUDDY' | 'CASANA';

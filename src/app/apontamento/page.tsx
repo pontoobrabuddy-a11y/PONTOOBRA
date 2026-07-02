@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, User } from "lucide-react";
 
 const statusConfig = {
   presence: { label: "Presença", short: "P", color: "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600", dot: "bg-emerald-500" },
@@ -175,15 +175,24 @@ export default function ApontamentoPage() {
                   className="flex flex-col p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors gap-3"
                 >
                   <div className="flex justify-between items-start">
-                    <div className="flex flex-col">
-                      <span className="font-medium text-foreground leading-tight">{employee.name}</span>
-                      <span className="text-xs text-muted-foreground mt-0.5">{employee.role} • {employee.team}</span>
-                      {hasObs && (
-                        <span className="text-xs text-blue-600 mt-1 flex items-center">
-                          <MessageSquare className="w-3 h-3 mr-1" />
-                          {record.observation}
-                        </span>
-                      )}
+                    <div className="flex items-center gap-3">
+                      <div className="relative size-12 rounded-full border bg-muted flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-200 hover:scale-[2.5] hover:z-20 origin-left cursor-pointer shadow-sm">
+                        {employee.photo_url ? (
+                          <img src={employee.photo_url} alt={employee.name} className="size-full object-cover" />
+                        ) : (
+                          <User className="size-6 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground leading-tight">{employee.name}</span>
+                        <span className="text-xs text-muted-foreground mt-0.5">{employee.role} • {employee.team}</span>
+                        {hasObs && (
+                          <span className="text-xs text-blue-600 mt-1 flex items-center">
+                            <MessageSquare className="w-3 h-3 mr-1" />
+                            {record.observation}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {/* Botão de Observação no topo direito */}
                     <Button 

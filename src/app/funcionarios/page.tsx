@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Plus, Search, Edit2, Trash2, UserX, UserCheck, DollarSign,
+  Plus, Search, Edit2, Trash2, User, UserX, UserCheck, DollarSign,
   ClipboardList, Mail, ArrowUpDown, Hash, Copy, Check, Printer
 } from "lucide-react";
 
@@ -113,6 +113,7 @@ type FormState = {
   notice_start_date: string;
   notice_end_date: string;
   dismissal_date: string;
+  photo_url: string;
 };
 
 const defaultForm: FormState = {
@@ -135,6 +136,47 @@ const defaultForm: FormState = {
   notice_start_date: "",
   notice_end_date: "",
   dismissal_date: "",
+  photo_url: "",
+};
+
+const compressImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 200;
+        const MAX_HEIGHT = 200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
 };
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -272,6 +314,7 @@ export default function FuncionariosPage() {
       notice_start_date: emp.notice_start_date || "",
       notice_end_date: emp.notice_end_date || "",
       dismissal_date: emp.dismissal_date || "",
+      photo_url: emp.photo_url || "",
     });
     setIsNewTeam(false);
     setIsNewRole(false);
@@ -307,6 +350,7 @@ export default function FuncionariosPage() {
       notice_end_date: formData.notice_end_date || undefined,
       last_work_date: lastWorkDateCalc || undefined,
       dismissal_date: formData.dismissal_date || undefined,
+      photo_url: formData.photo_url || undefined,
     };
 
     if (editingId) {
@@ -621,9 +665,18 @@ ${signature}`;
                         {emp.employee_number ?? "-"}
                       </TableCell>
                       <TableCell>
-                        <div>
-                          <p className="font-medium">{emp.name}</p>
-                          {emp.nickname && <p className="text-xs text-muted-foreground">{emp.nickname}</p>}
+                        <div className="flex items-center gap-3">
+                          <div className="relative size-10 rounded-full border bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                            {emp.photo_url ? (
+                              <img src={emp.photo_url} alt={emp.name} className="size-full object-cover" />
+                            ) : (
+                              <User className="size-5 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium">{emp.name}</p>
+                            {emp.nickname && <p className="text-xs text-muted-foreground">{emp.nickname}</p>}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell text-sm">{emp.role || "-"}</TableCell>
@@ -718,6 +771,49 @@ ${signature}`;
             {/* ── Aba 1: Dados Pessoais ── */}
             <TabsContent value="pessoal">
               <div className="grid gap-4 py-4">
+                {/* Foto */}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right text-sm">Foto</Label>
+                  <div className="col-span-3 flex items-center gap-4">
+                    <div className="relative size-16 rounded-full border bg-muted flex items-center justify-center overflow-hidden">
+                      {formData.photo_url ? (
+                        <img src={formData.photo_url} alt="Foto Preview" className="size-full object-cover" />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Sem foto</span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        className="text-xs max-w-xs cursor-pointer"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            try {
+                              const base64 = await compressImage(file);
+                              setFormData({ ...formData, photo_url: base64 });
+                            } catch (err) {
+                              console.error(err);
+                              alert("Erro ao processar imagem.");
+                            }
+                          }
+                        }}
+                      />
+                      {formData.photo_url && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-fit text-xs text-red-500 hover:text-red-600 hover:bg-red-50 p-0"
+                          onClick={() => setFormData({ ...formData, photo_url: "" })}
+                        >
+                          Remover foto
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 {/* Nº Contabilidade */}
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label className="text-right text-sm">Nº Contab.</Label>

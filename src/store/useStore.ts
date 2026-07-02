@@ -26,6 +26,7 @@ export interface Employee {
   last_work_date?: string;
   dismissal_type?: 'pedido_com' | 'pedido_sem' | 'empresa_com' | 'empresa_sem';
   salary_family?: boolean;
+  photo_url?: string;
 }
 
 export type Status = "presence" | "absence" | "justified_absence" | "half_presence" | "suspension" | null;

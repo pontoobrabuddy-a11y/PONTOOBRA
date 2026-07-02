@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useStore, Employee, SalaryHistory } from "@/store/useStore";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -188,6 +189,7 @@ export default function FuncionariosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"number" | "name">("number");
   const [onlyActive, setOnlyActive] = useState(true);
+  const [zoomedPhotoId, setZoomedPhotoId] = useState<string | null>(null);
 
   // ── Main dialog ──
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -590,7 +592,7 @@ ${signature}`;
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" onClick={() => setZoomedPhotoId(null)}>
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
@@ -683,7 +685,16 @@ ${signature}`;
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <div className="relative size-10 rounded-full border bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setZoomedPhotoId(zoomedPhotoId === emp.id ? null : emp.id);
+                            }}
+                            className={cn(
+                              "relative size-10 rounded-full border bg-muted flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-200 origin-left cursor-pointer shadow-sm hover:scale-[2.5] hover:z-20",
+                              zoomedPhotoId === emp.id ? "scale-[2.5] z-20" : ""
+                            )}
+                          >
                             {emp.photo_url ? (
                               <img src={emp.photo_url} alt={emp.name} className="size-full object-cover" />
                             ) : (

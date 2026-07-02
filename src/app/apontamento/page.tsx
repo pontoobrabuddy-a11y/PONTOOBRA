@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { cn } from "@/lib/utils";
 import { useStore, Employee, Status, AttendanceRecord } from "@/store/useStore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ export default function ApontamentoPage() {
   const [obsDialogOpen, setObsDialogOpen] = useState(false);
   const [activeEmpId, setActiveEmpId] = useState<string | null>(null);
   const [tempObs, setTempObs] = useState("");
+  const [zoomedPhotoId, setZoomedPhotoId] = useState<string | null>(null);
 
   const isWithinLast7DaysOfNotice = (emp: Employee, dateStr: string): boolean => {
     if (emp.dismissal_type !== "empresa_com" || !emp.notice_end_date) return false;
@@ -119,7 +121,7 @@ export default function ApontamentoPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" onClick={() => setZoomedPhotoId(null)}>
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-primary">Apontamento Diário</h1>
@@ -176,7 +178,16 @@ export default function ApontamentoPage() {
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-3">
-                      <div className="relative size-12 rounded-full border bg-muted flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-200 hover:scale-[2.5] hover:z-20 origin-left cursor-pointer shadow-sm">
+                      <div 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setZoomedPhotoId(zoomedPhotoId === employee.id ? null : employee.id);
+                        }}
+                        className={cn(
+                          "relative size-12 rounded-full border bg-muted flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-200 origin-left cursor-pointer shadow-sm hover:scale-[2.5] hover:z-20",
+                          zoomedPhotoId === employee.id ? "scale-[2.5] z-20" : ""
+                        )}
+                      >
                         {employee.photo_url ? (
                           <img src={employee.photo_url} alt={employee.name} className="size-full object-cover" />
                         ) : (

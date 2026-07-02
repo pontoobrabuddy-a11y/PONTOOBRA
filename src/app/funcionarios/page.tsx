@@ -243,7 +243,7 @@ export default function FuncionariosPage() {
     const q = searchTerm.toLowerCase();
     const filtered = employees.filter(
       (emp) =>
-        (!onlyActive || emp.status !== "inativo") && (
+        (onlyActive ? emp.status !== "inativo" : emp.status === "inativo") && (
           emp.name.toLowerCase().includes(q) ||
           (emp.cpf || "").includes(q) ||
           (emp.role || "").toLowerCase().includes(q)

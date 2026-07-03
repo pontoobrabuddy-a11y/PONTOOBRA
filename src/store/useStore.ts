@@ -15,7 +15,7 @@ export interface Employee {
   status: EmployeeStatus;
   team: string;
   // Novos campos — todos opcionais
-  employee_number?: string;
+  employee_number?: number | string | null;
   nickname?: string;
   salary?: number;
   pagador?: 'BUDDY' | 'CASANA';
@@ -28,7 +28,7 @@ export interface Employee {
   last_work_date?: string;
   dismissal_type?: 'pedido_com' | 'pedido_sem' | 'empresa_com' | 'empresa_sem';
   salary_family?: boolean;
-  photo_url?: string;
+  photo_url?: string | null;
 }
 
 export type Status = "presence" | "absence" | "justified_absence" | "half_presence" | "suspension" | null;

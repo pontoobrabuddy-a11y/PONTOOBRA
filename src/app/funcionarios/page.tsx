@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useStore, Employee, SalaryHistory } from "@/store/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -195,6 +195,13 @@ export default function FuncionariosPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormState>(defaultForm);
+
+  const editingIdRef = useRef(editingId);
+  useEffect(() => {
+    editingIdRef.current = editingId;
+  }, [editingId]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isNewTeam, setIsNewTeam] = useState(false);
   const [isNewRole, setIsNewRole] = useState(false);
   const [activeTab, setActiveTab] = useState<string | number>("pessoal");
@@ -255,15 +262,15 @@ export default function FuncionariosPage() {
       return [...filtered].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     }
     return [...filtered].sort((a, b) => {
-      const numA = parseInt(a.employee_number || "", 10);
-      const numB = parseInt(b.employee_number || "", 10);
+      const numA = parseInt(a.employee_number != null ? String(a.employee_number) : "", 10);
+      const numB = parseInt(b.employee_number != null ? String(b.employee_number) : "", 10);
       const isNumA = !isNaN(numA);
       const isNumB = !isNaN(numB);
       
       if (isNumA && isNumB) return numA - numB;
       if (isNumA) return -1;
       if (isNumB) return 1;
-      return (a.employee_number || "").localeCompare(b.employee_number || "");
+      return (a.employee_number != null ? String(a.employee_number) : "").localeCompare(b.employee_number != null ? String(b.employee_number) : "");
     });
   }, [employees, searchTerm, sortBy, onlyActive]);
 
@@ -292,12 +299,15 @@ export default function FuncionariosPage() {
     setIsNewRole(false);
     setActiveTab("pessoal");
     setIsDialogOpen(true);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const openEditDialog = (emp: Employee) => {
     setEditingId(emp.id);
     setFormData({
-      employee_number: emp.employee_number !== undefined ? String(emp.employee_number) : "",
+      employee_number: emp.employee_number != null ? String(emp.employee_number) : "",
       name: emp.name || "",
       nickname: emp.nickname || "",
       cpf: emp.cpf || "",
@@ -322,6 +332,9 @@ export default function FuncionariosPage() {
     setIsNewRole(false);
     setActiveTab("pessoal");
     setIsDialogOpen(true);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleSave = async () => {
@@ -340,7 +353,9 @@ export default function FuncionariosPage() {
       team: formData.team || "Geral",
       admission_date: formData.admission_date || "",
       status: (formData.status as Employee["status"]) || "ativo",
-      employee_number: formData.employee_number || undefined,
+      employee_number: (formData.employee_number && formData.employee_number !== "S/N" && formData.employee_number !== "null")
+        ? Number(formData.employee_number)
+        : null,
       employment_type: (formData.employment_type as Employee["employment_type"]) || undefined,
       pagador: (formData.pagador as Employee["pagador"]) || undefined,
       salary: formData.salary ? Number(formData.salary) : undefined,
@@ -352,7 +367,7 @@ export default function FuncionariosPage() {
       notice_end_date: formData.notice_end_date || undefined,
       last_work_date: lastWorkDateCalc || undefined,
       dismissal_date: formData.dismissal_date || undefined,
-      photo_url: formData.photo_url || undefined,
+      photo_url: formData.photo_url || null,
     };
 
     if (editingId) {
@@ -796,15 +811,19 @@ ${signature}`;
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Input
+                        ref={fileInputRef}
                         type="file"
                         accept="image/*"
                         className="text-xs max-w-xs cursor-pointer"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (file) {
+                            const uploadId = editingIdRef.current;
                             try {
                               const base64 = await compressImage(file);
-                              setFormData({ ...formData, photo_url: base64 });
+                              if (editingIdRef.current === uploadId) {
+                                setFormData(prev => ({ ...prev, photo_url: base64 }));
+                              }
                             } catch (err) {
                               console.error(err);
                               alert("Erro ao processar imagem.");
@@ -818,7 +837,12 @@ ${signature}`;
                           variant="ghost"
                           size="sm"
                           className="h-6 w-fit text-xs text-red-500 hover:text-red-600 hover:bg-red-50 p-0"
-                          onClick={() => setFormData({ ...formData, photo_url: "" })}
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, photo_url: "" }));
+                            if (fileInputRef.current) {
+                              fileInputRef.current.value = "";
+                            }
+                          }}
                         >
                           Remover foto
                         </Button>

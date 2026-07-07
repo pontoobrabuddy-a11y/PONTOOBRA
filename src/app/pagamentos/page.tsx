@@ -87,14 +87,12 @@ const CASANA_EMPRESA = "BUDDY & GENECY CONSTRUTORA LTDA";
 const CASANA_CNPJ = "50.251.097/0001-83";
 
 const PREDEFINED_TAXES = [
-  "GFD - Guia do FGTS Digital",
   "Guia do INSS DARF",
   "Guia do SIMPLES NACIONAL DASN"
 ];
 
 const IMPOSTOS_SUGERIDOS = [
   ...PREDEFINED_TAXES,
-  "GFD - Guia FGTS Digital",
   "DARF INSS",
   "Simples Nacional",
   "DARF CSLL",
@@ -1228,7 +1226,7 @@ export default function PagamentosPage() {
                 Impostos — {MESES[mesSelecionado - 1]}/{anoSelecionado}
               </h2>
               <p className="text-xs text-muted-foreground">
-                GFD, DARF INSS, Simples Nacional e outros
+                DARF INSS, Simples Nacional e outros
               </p>
             </div>
             <Button

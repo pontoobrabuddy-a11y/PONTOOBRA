@@ -87,6 +87,7 @@ const CASANA_EMPRESA = "BUDDY & GENECY CONSTRUTORA LTDA";
 const CASANA_CNPJ = "50.251.097/0001-83";
 
 const PREDEFINED_TAXES = [
+  "GFD - Guia do FGTS Digital",
   "Guia do INSS DARF",
   "Guia do SIMPLES NACIONAL DASN"
 ];
@@ -570,8 +571,8 @@ export default function PagamentosPage() {
       company: novoImposto.empresa === "AMBAS" ? "BUDDY" : novoImposto.empresa,
       amount: valor,
       due_date: novoImposto.vencimento,
-      competence_month: mesSelecionado,
-      competence_year: anoSelecionado,
+      competence_month: novoImposto.competencia_mes,
+      competence_year: novoImposto.competencia_ano,
       paid_at: novoImposto.pago_em || undefined,
     });
     setNovoImpostoOpen(false);
@@ -1226,7 +1227,7 @@ export default function PagamentosPage() {
                 Impostos — {MESES[mesSelecionado - 1]}/{anoSelecionado}
               </h2>
               <p className="text-xs text-muted-foreground">
-                DARF INSS, Simples Nacional e outros
+                GFD, DARF INSS, Simples Nacional e outros
               </p>
             </div>
             <Button

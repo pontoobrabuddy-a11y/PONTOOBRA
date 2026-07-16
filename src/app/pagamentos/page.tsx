@@ -74,6 +74,24 @@ interface Tax {
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
+const DEFAULT_SALARY_MAPPINGS = [
+  { liquid: 1800, gross: 1951.30 },
+  { liquid: 1870, gross: 2028.22 },
+  { liquid: 1900, gross: 2061.19 },
+  { liquid: 2000, gross: 2171.08 },
+  { liquid: 2100, gross: 2280.97 },
+  { liquid: 2200, gross: 2390.86 },
+  { liquid: 2500, gross: 2720.53 },
+  { liquid: 2600, gross: 2830.42 },
+  { liquid: 2900, gross: 3168.86 },
+  { liquid: 3000, gross: 3282.50 },
+  { liquid: 3190, gross: 3498.41 },
+  { liquid: 3200, gross: 3509.77 },
+  { liquid: 3500, gross: 3850.68 },
+  { liquid: 4000, gross: 4420.36 },
+  { liquid: 4500, gross: 5003.02 },
+];
+
 const MESES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
@@ -187,6 +205,94 @@ export default function PagamentosPage() {
   const hoje = new Date();
   const [mesSelecionado, setMesSelecionado] = useState(hoje.getMonth() + 1);
   const [anoSelecionado, setAnoSelecionado] = useState(hoje.getFullYear());
+
+  const [salaryMappings, setSalaryMappings] = useState<{ liquid: number; gross: number }[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("salary_mappings");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+    return DEFAULT_SALARY_MAPPINGS;
+  });
+
+  const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false);
+  const [newMapLiquid, setNewMapLiquid] = useState("");
+  const [newMapGross, setNewMapGross] = useState("");
+
+  const getGrossSalary = (liquid: number) => {
+    const match = salaryMappings.find((m) => Math.abs(m.liquid - liquid) < 0.01);
+    if (match) return match.gross;
+    return liquid * 1.084;
+  };
+
+  const getActiveDaysInPeriod = (emp: Employee, startDay: number, endDay: number) => {
+    if (!emp.admission_date) return 0;
+    const adDateStr = emp.admission_date.slice(0, 10);
+    const [adYear, adMonth, adDay] = adDateStr.split("-").map(Number);
+    const currentPeriodStart = new Date(anoSelecionado, mesSelecionado - 1, startDay);
+    const currentPeriodEnd = new Date(anoSelecionado, mesSelecionado - 1, endDay);
+    const admissionDate = new Date(adYear, adMonth - 1, adDay);
+    if (admissionDate > currentPeriodEnd) return 0;
+    const effectiveStartDay = admissionDate > currentPeriodStart ? adDay : startDay;
+    return endDay - effectiveStartDay + 1;
+  };
+
+  const getAbsencesInPeriod = (employeeId: string, startDay: number, endDay: number) => {
+    let absences = 0;
+    for (let d = startDay; d <= endDay; d++) {
+      const dateStr = `${anoSelecionado}-${String(mesSelecionado).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const record = attendance[dateStr]?.[employeeId];
+      const status = typeof record === 'object' ? record?.status : record;
+      if (status === 'absence') {
+        absences += 1;
+      } else if (status === 'half_presence') {
+        absences += 0.5;
+      }
+    }
+    return absences;
+  };
+
+  const calculateValorQ1 = (emp: Employee) => {
+    const isAvulso = emp.employment_type === "Avulso";
+    const diasQ1 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 1, 15);
+    if (isAvulso) {
+      return (emp.salary || 0) * diasQ1;
+    }
+    const activeDaysQ1 = getActiveDaysInPeriod(emp, 1, 15);
+    const absencesQ1 = getAbsencesInPeriod(emp.id, 1, 15);
+    const grossSalary = getGrossSalary(emp.salary || 0);
+    const baseQ1 = ((emp.salary || 0) / 30) * activeDaysQ1;
+    const discountQ1 = absencesQ1 * (grossSalary / 30);
+    return Math.max(0, baseQ1 - discountQ1);
+  };
+
+  const calculateValorQ2 = (emp: Employee) => {
+    const isAvulso = emp.employment_type === "Avulso";
+    const diasQ2 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 16, 31);
+    if (isAvulso) {
+      return (emp.salary || 0) * diasQ2;
+    }
+    const activeDaysQ2 = getActiveDaysInPeriod(emp, 16, 30);
+    const absencesQ2 = getAbsencesInPeriod(emp.id, 16, 31);
+    const grossSalary = getGrossSalary(emp.salary || 0);
+    const baseQ2 = ((emp.salary || 0) / 30) * activeDaysQ2;
+    const discountQ2 = absencesQ2 * (grossSalary / 30);
+    const precalcQ2 = Math.max(0, baseQ2 - discountQ2);
+
+    const liquidoStr = liquidoContab[emp.id] || "";
+    const liquido = parseFloat(liquidoStr.replace(",", ".")) || 0;
+    
+    if (liquido > 0) {
+      const valorQ1 = calculateValorQ1(emp);
+      return Math.max(0, liquido - valorQ1);
+    }
+    return precalcQ2;
+  };
 
   const getDaysWorked = (employeeId: string, month: number, year: number, startDay: number, endDay: number) => {
     let days = 0;
@@ -369,15 +475,27 @@ export default function PagamentosPage() {
     pago_em: "",
   });
 
-  // ── Filtros ────────────────────────────────────────────────────────────────
-  const casanaEmployees = useMemo(
-    () => employees.filter((e) => e.status === "ativo" && e.pagador === "CASANA"),
-    [employees]
-  );
-  const buddyEmployees = useMemo(
-    () => employees.filter((e) => e.status === "ativo" && e.pagador === "BUDDY"),
-    [employees]
-  );
+  const casanaEmployees = useMemo(() => {
+    return employees.filter((e) => {
+      if (e.status !== "ativo" || e.pagador !== "CASANA") return false;
+      if (!e.admission_date) return true;
+      const [adYear, adMonth] = e.admission_date.slice(0, 10).split("-").map(Number);
+      if (adYear > anoSelecionado) return false;
+      if (adYear === anoSelecionado && adMonth > mesSelecionado) return false;
+      return true;
+    });
+  }, [employees, mesSelecionado, anoSelecionado]);
+
+  const buddyEmployees = useMemo(() => {
+    return employees.filter((e) => {
+      if (e.status !== "ativo" || e.pagador !== "BUDDY") return false;
+      if (!e.admission_date) return true;
+      const [adYear, adMonth] = e.admission_date.slice(0, 10).split("-").map(Number);
+      if (adYear > anoSelecionado) return false;
+      if (adYear === anoSelecionado && adMonth > mesSelecionado) return false;
+      return true;
+    });
+  }, [employees, mesSelecionado, anoSelecionado]);
 
   const impostosFiltrados = useMemo(() => {
     const actual = impostos.filter(
@@ -469,8 +587,9 @@ export default function PagamentosPage() {
     );
 
     const emp = employees.find(e => e.id === employeeId);
-    const q1Valor = (emp?.salary || 0) / 2;
-    const net = valorContab > 0 ? Math.max(0, valorContab - q1Valor) : 0;
+    if (!emp) return;
+    const valorQ1 = calculateValorQ1(emp);
+    const net = valorContab > 0 ? Math.max(0, valorContab - valorQ1) : 0;
 
     if (existing) {
       await updatePayment(existing.id, {
@@ -530,26 +649,12 @@ export default function PagamentosPage() {
 
   // ── Totais ─────────────────────────────────────────────────────────────────
   const totalQ1 = useMemo(() => {
-    return casanaEmployees.reduce((acc, e) => {
-      const isAvulso = e.employment_type === "Avulso";
-      const diasQ1 = getDaysWorked(e.id, mesSelecionado, anoSelecionado, 1, 15);
-      const valorQ1 = isAvulso ? (e.salary || 0) * diasQ1 : (e.salary || 0) / 2;
-      return acc + valorQ1;
-    }, 0);
-  }, [casanaEmployees, mesSelecionado, anoSelecionado, attendance]);
+    return casanaEmployees.reduce((acc, e) => acc + calculateValorQ1(e), 0);
+  }, [casanaEmployees, mesSelecionado, anoSelecionado, attendance, salaryMappings]);
 
   const totalQ2 = useMemo(() => {
-    return casanaEmployees.reduce((acc, e) => {
-      const isAvulso = e.employment_type === "Avulso";
-      const diasQ2 = getDaysWorked(e.id, mesSelecionado, anoSelecionado, 16, 31);
-      if (isAvulso) {
-        return acc + (e.salary || 0) * diasQ2;
-      }
-      const liquido = parseFloat((liquidoContab[e.id] || "").replace(",", ".")) || 0;
-      const q1Valor = (e.salary || 0) / 2;
-      return acc + Math.max(0, liquido - q1Valor);
-    }, 0);
-  }, [casanaEmployees, liquidoContab, pagamentos, mesSelecionado, anoSelecionado, attendance]);
+    return casanaEmployees.reduce((acc, e) => acc + calculateValorQ2(e), 0);
+  }, [casanaEmployees, liquidoContab, mesSelecionado, anoSelecionado, attendance, salaryMappings]);
 
   const totalBuddy = useMemo(() => {
     return buddyEmployees.reduce((acc, e) => {
@@ -647,11 +752,22 @@ export default function PagamentosPage() {
 
       {/* Tabs Principais */}
       <Tabs defaultValue="casana">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="casana">🏗️ Quinzenas CASANA</TabsTrigger>
-          <TabsTrigger value="buddy">🏢 Mensal BUDDY</TabsTrigger>
-          <TabsTrigger value="impostos">📋 Impostos</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <TabsList className="w-full sm:w-auto">
+            <TabsTrigger value="casana">🏗️ Quinzenas CASANA</TabsTrigger>
+            <TabsTrigger value="buddy">🏢 Mensal BUDDY</TabsTrigger>
+            <TabsTrigger value="impostos">📋 Impostos</TabsTrigger>
+          </TabsList>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsConfigDialogOpen(true)}
+            className="text-xs h-9 font-semibold border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            ⚙️ Tabela Salarial (Líquido x Bruto)
+          </Button>
+        </div>
 
         {/* ══════════ ABA 1: QUINZENAS CASANA ══════════ */}
         <TabsContent value="casana" className="mt-4">
@@ -725,7 +841,10 @@ export default function PagamentosPage() {
                       {casanaEmployees.map((emp, idx) => {
                         const isAvulso = emp.employment_type === "Avulso";
                         const diasQ1 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 1, 15);
-                        const valorQ1 = isAvulso ? (emp.salary || 0) * diasQ1 : (emp.salary || 0) / 2;
+                        const valorQ1 = calculateValorQ1(emp);
+                        const activeDaysQ1 = getActiveDaysInPeriod(emp, 1, 15);
+                        const absencesQ1 = getAbsencesInPeriod(emp.id, 1, 15);
+                        
                         const pag = getPagamento(emp.id, "casana_q1");
                         const pago = pag?.status === "pago";
                         return (
@@ -747,9 +866,14 @@ export default function PagamentosPage() {
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-blue-700 dark:text-blue-300">
                               <div>{formatMoney(valorQ1)}</div>
-                              {isAvulso && (
+                              {isAvulso ? (
                                 <div className="text-xs text-muted-foreground font-normal">
                                   {diasQ1} {diasQ1 === 1 ? "diária" : "diárias"}
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-muted-foreground font-normal leading-tight">
+                                  {activeDaysQ1 < 15 && <div>Ativo: {activeDaysQ1}d</div>}
+                                  {absencesQ1 > 0 && <div className="text-red-500 font-medium">Faltas: {absencesQ1}d</div>}
                                 </div>
                               )}
                             </td>
@@ -872,17 +996,19 @@ export default function PagamentosPage() {
                     <tbody>
                       {casanaEmployees.map((emp, idx) => {
                         const isAvulso = emp.employment_type === "Avulso";
-                        const diasQ1 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 1, 15);
                         const diasQ2 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 16, 31);
 
-                        const q1Valor = isAvulso ? (emp.salary || 0) * diasQ1 : (emp.salary || 0) / 2;
+                        const valorQ1 = calculateValorQ1(emp);
                         const q1Pag = getPagamento(emp.id, "casana_q1");
                         const q1Pago = q1Pag?.status === "pago";
+                        const q1Display = q1Pago && q1Pag?.valor_base !== undefined ? q1Pag.valor_base : valorQ1;
+
                         const liquidoStr = liquidoContab[emp.id] || "";
                         const liquido = parseFloat(liquidoStr.replace(",", ".")) || 0;
-                        const valorQ2 = isAvulso 
-                          ? (emp.salary || 0) * diasQ2
-                          : (liquido > 0 ? Math.max(0, liquido - q1Valor) : 0);
+                        const valorQ2 = calculateValorQ2(emp);
+                        const activeDaysQ2 = getActiveDaysInPeriod(emp, 16, 30);
+                        const absencesQ2 = getAbsencesInPeriod(emp.id, 16, 31);
+
                         const pag = getPagamento(emp.id, "casana_q2");
                         const pago = pag?.status === "pago";
 
@@ -893,7 +1019,7 @@ export default function PagamentosPage() {
                             </td>
                             <td className="px-3 py-2 font-medium">{emp.name}</td>
                             <td className="px-3 py-2 text-right text-muted-foreground">
-                              {q1Pago ? formatMoney(q1Valor) : <span className="text-amber-500 text-xs">Não paga</span>}
+                              {q1Pago ? formatMoney(q1Display) : <span className="text-amber-500 text-xs">Não paga ({formatMoney(valorQ1)})</span>}
                             </td>
                             <td className="px-3 py-2 text-center">
                               {isAvulso ? (
@@ -915,9 +1041,13 @@ export default function PagamentosPage() {
                               {isAvulso ? (
                                 <div>{formatMoney(valorQ2)}</div>
                               ) : (
-                                liquido > 0 ? formatMoney(valorQ2) : (
-                                  <span className="text-xs text-muted-foreground italic">Aguardando folha</span>
-                                )
+                                <div>
+                                  <div>{formatMoney(valorQ2)}</div>
+                                  <div className="text-[10px] text-muted-foreground font-normal leading-tight">
+                                    {activeDaysQ2 < 15 && <div>Ativo: {activeDaysQ2}d</div>}
+                                    {absencesQ2 > 0 && <div className="text-red-500 font-medium">Faltas: {absencesQ2}d</div>}
+                                  </div>
+                                </div>
                               )}
                             </td>
                             <td className="px-3 py-2 text-center">
@@ -934,7 +1064,7 @@ export default function PagamentosPage() {
                               )}
                             </td>
                             <td className="px-3 py-2">
-                              {!pago && (isAvulso ? valorQ2 > 0 : liquido > 0) && (
+                              {!pago && valorQ2 > 0 && (
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -945,7 +1075,7 @@ export default function PagamentosPage() {
                                       descricao: `Marcar ${emp.name} como pago: ${formatMoney(valorQ2)}`,
                                       onConfirm: (data) =>
                                         marcarComoPago(emp.id, "casana_q2", valorQ2, data, {
-                                          valor_contabilidade: isAvulso ? valorQ2 : liquido,
+                                          valor_contabilidade: isAvulso ? valorQ2 : (liquido > 0 ? liquido : (valorQ1 + valorQ2)),
                                         }),
                                     })
                                   }
@@ -1593,6 +1723,111 @@ export default function PagamentosPage() {
             <Button onClick={adicionarImposto}>
               <Plus className="size-4" />
               Adicionar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog de Configurações de Salários (Líquido x Bruto) ─────────────── */}
+      <Dialog
+        open={isConfigDialogOpen}
+        onOpenChange={(o) => setIsConfigDialogOpen(o)}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col p-6">
+          <DialogHeader>
+            <DialogTitle>Tabela Salarial (Líquido x Bruto)</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1 py-1">
+            <p className="text-xs text-muted-foreground">
+              Configure aqui a base de cálculo para descontar faltas dos trabalhadores. Caso o salário líquido de um funcionário não seja encontrado nesta tabela, será aplicada uma proporção padrão (Bruto = Líquido * 1,084).
+            </p>
+
+            {/* Adicionar nova faixa */}
+            <div className="flex gap-2 items-end bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border">
+              <div className="flex-1 space-y-1">
+                <Label className="text-xs">Líquido (R$)</Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 1800,00"
+                  value={newMapLiquid}
+                  onChange={(e) => setNewMapLiquid(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <Label className="text-xs">Bruto (R$)</Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 1951,30"
+                  value={newMapGross}
+                  onChange={(e) => setNewMapGross(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={() => {
+                  const liq = parseFloat(newMapLiquid.replace(",", ".")) || 0;
+                  const gro = parseFloat(newMapGross.replace(",", ".")) || 0;
+                  if (liq <= 0 || gro <= 0) return;
+                  
+                  setSalaryMappings(prev => {
+                    const filtered = prev.filter(m => Math.abs(m.liquid - liq) > 0.01);
+                    const updated = [...filtered, { liquid: liq, gross: gro }].sort((a, b) => a.liquid - b.liquid);
+                    localStorage.setItem("salary_mappings", JSON.stringify(updated));
+                    return updated;
+                  });
+                  setNewMapLiquid("");
+                  setNewMapGross("");
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-3 text-xs flex items-center gap-1 font-semibold"
+              >
+                <Plus className="size-3" /> Adicionar
+              </Button>
+            </div>
+
+            {/* Lista de faixas */}
+            <div className="rounded-md border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-100 dark:bg-slate-900 border-b font-semibold">
+                  <tr>
+                    <th className="text-left px-3 py-2">Salário Líquido</th>
+                    <th className="text-left px-3 py-2">Salário Bruto</th>
+                    <th className="text-right px-3 py-2">Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {salaryMappings.map((m) => (
+                    <tr key={m.liquid} className="border-b last:border-0 hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                      <td className="px-3 py-2 font-medium font-mono">{formatMoney(m.liquid)}</td>
+                      <td className="px-3 py-2 font-mono text-muted-foreground">{formatMoney(m.gross)}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                          onClick={() => {
+                            setSalaryMappings(prev => {
+                              const updated = prev.filter(x => Math.abs(x.liquid - m.liquid) > 0.01);
+                              localStorage.setItem("salary_mappings", JSON.stringify(updated));
+                              return updated;
+                            });
+                          }}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-4 pt-2 border-t">
+            <Button variant="outline" onClick={() => setIsConfigDialogOpen(false)} className="h-9 text-xs">
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

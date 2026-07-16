@@ -92,8 +92,8 @@ function MetricCard({
   iconColor,
 }: {
   title: string;
-  value: number;
-  subtitle: string;
+  value: number | string;
+  subtitle: React.ReactNode;
   icon: React.ElementType;
   gradient: string;
   iconColor: string;
@@ -108,7 +108,7 @@ function MetricCard({
       </CardHeader>
       <CardContent>
         <div className="text-3xl font-bold text-white">{value}</div>
-        <p className="text-xs text-white/70 mt-1">{subtitle}</p>
+        <div className="text-xs text-white/70 mt-1">{subtitle}</div>
       </CardContent>
       <div className="absolute -bottom-4 -right-4 h-20 w-20 rounded-full bg-white/10" />
     </Card>
@@ -164,6 +164,16 @@ export default function RHFinanceiroDashboard() {
     [emps]
   );
 
+  const casanaActiveCount = useMemo(
+    () => activeEmployees.filter((e) => e.pagador === "CASANA").length,
+    [activeEmployees]
+  );
+
+  const buddyActiveCount = useMemo(
+    () => activeEmployees.filter((e) => e.pagador === "BUDDY").length,
+    [activeEmployees]
+  );
+
   const inNoticePeriod = useMemo(
     () => activeEmployees.filter((e) => !!e.notice_end_date),
     [activeEmployees]
@@ -173,7 +183,8 @@ export default function RHFinanceiroDashboard() {
     () =>
       emps.filter((e) => {
         if (!e.admission_date) return false;
-        const d = new Date(e.admission_date + "T12:00:00Z");
+        const datePart = e.admission_date.slice(0, 10);
+        const d = new Date(datePart + "T12:00:00Z");
         return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
       }),
     [emps, thisMonth, thisYear]
@@ -183,7 +194,8 @@ export default function RHFinanceiroDashboard() {
     () =>
       emps.filter((e) => {
         if (!e.dismissal_date) return false;
-        const d = new Date(e.dismissal_date + "T12:00:00Z");
+        const datePart = e.dismissal_date.slice(0, 10);
+        const d = new Date(datePart + "T12:00:00Z");
         return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
       }),
     [emps, thisMonth, thisYear]
@@ -242,7 +254,12 @@ export default function RHFinanceiroDashboard() {
         <MetricCard
           title="Funcionarios Ativos"
           value={activeEmployees.length}
-          subtitle="Com status Ativo"
+          subtitle={
+            <div className="flex flex-col gap-0.5 text-[10px] text-white/80 leading-tight mt-1">
+              <span>Trabalhadores direto da obra: {casanaActiveCount} colaboradores</span>
+              <span>Trabalhadores da buddy: {buddyActiveCount} colaboradores</span>
+            </div>
+          }
           icon={Users}
           gradient="bg-gradient-to-br from-blue-600 to-blue-700"
           iconColor="text-white"

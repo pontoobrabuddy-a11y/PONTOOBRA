@@ -53,6 +53,10 @@ export default function ApontamentoPage() {
 
     employees.forEach(emp => {
       if (emp.status !== "inativo" && isWithinLast7DaysOfNotice(emp, date)) {
+        if (emp.admission_date) {
+          const adDateStr = emp.admission_date.slice(0, 10);
+          if (adDateStr > date) return;
+        }
         const currentDay = new Date(date + "T00:00:00");
         const dayOfWeek = currentDay.getDay();
         const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
@@ -80,7 +84,14 @@ export default function ApontamentoPage() {
 
   const markAllAs = (status: Status) => {
     const newDrafts: Record<string, AttendanceRecord> = {};
-    employees.filter(emp => emp.status !== "inativo").forEach(emp => {
+    employees.filter(emp => {
+      if (emp.status === "inativo") return false;
+      if (emp.admission_date) {
+        const adDateStr = emp.admission_date.slice(0, 10);
+        if (adDateStr > date) return false;
+      }
+      return true;
+    }).forEach(emp => {
       newDrafts[emp.id] = { ...(currentAttendance[emp.id] || {}), status };
     });
     setDraftAttendance(date, newDrafts);
@@ -102,7 +113,14 @@ export default function ApontamentoPage() {
   };
 
   const handleSave = () => {
-    const activeEmployees = employees.filter(emp => emp.status !== "inativo");
+    const activeEmployees = employees.filter(emp => {
+      if (emp.status === "inativo") return false;
+      if (emp.admission_date) {
+        const adDateStr = emp.admission_date.slice(0, 10);
+        if (adDateStr > date) return false;
+      }
+      return true;
+    });
     const unrecorded = activeEmployees.filter(e => !currentAttendance[e.id] || currentAttendance[e.id].status === null);
     if (unrecorded.length > 0) {
       alert(`Atenção: ${unrecorded.length} funcionários ainda não tiveram o apontamento preenchido.`);
@@ -113,12 +131,19 @@ export default function ApontamentoPage() {
     alert("Apontamento salvo com sucesso!");
   };
 
-  const filteredEmployees = employees.filter(emp => 
-    emp.status !== "inativo" && (
-      emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.team.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  );
+  const filteredEmployees = employees.filter(emp => {
+    const isActive = emp.status !== "inativo";
+    const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.team.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (!isActive || !matchesSearch) return false;
+
+    if (emp.admission_date) {
+      const adDateStr = emp.admission_date.slice(0, 10);
+      if (adDateStr > date) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6" onClick={() => setZoomedPhotoId(null)}>

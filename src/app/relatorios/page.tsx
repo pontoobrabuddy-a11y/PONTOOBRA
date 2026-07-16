@@ -16,7 +16,12 @@ export default function RelatoriosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [companyFilter, setCompanyFilter] = useState<'TODOS' | 'BUDDY' | 'CASANA'>('TODOS');
 
-  const [monthStr, setMonthStr] = useState<string>("2026-06");
+  const [monthStr, setMonthStr] = useState<string>(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  });
   const [viewMode, setViewMode] = useState<'resumo' | 'espelho'>('resumo');
 
   const [yearStr, mStr] = monthStr.split('-');

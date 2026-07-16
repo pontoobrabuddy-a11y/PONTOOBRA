@@ -189,6 +189,7 @@ export default function FuncionariosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"number" | "name">("number");
   const [onlyActive, setOnlyActive] = useState(true);
+  const [companyFilter, setCompanyFilter] = useState<"TODOS" | "BUDDY" | "CASANA">("TODOS");
   const [zoomedPhotoId, setZoomedPhotoId] = useState<string | null>(null);
 
   // ── Main dialog ──
@@ -252,7 +253,8 @@ export default function FuncionariosPage() {
     const q = searchTerm.toLowerCase();
     const filtered = employees.filter(
       (emp) =>
-        (onlyActive ? emp.status !== "inativo" : emp.status === "inativo") && (
+        (onlyActive ? emp.status !== "inativo" : emp.status === "inativo") &&
+        (companyFilter === "TODOS" || emp.pagador === companyFilter) && (
           emp.name.toLowerCase().includes(q) ||
           (emp.cpf || "").includes(q) ||
           (emp.role || "").toLowerCase().includes(q)
@@ -272,7 +274,7 @@ export default function FuncionariosPage() {
       if (isNumB) return 1;
       return (a.employee_number != null ? String(a.employee_number) : "").localeCompare(b.employee_number != null ? String(b.employee_number) : "");
     });
-  }, [employees, searchTerm, sortBy, onlyActive]);
+  }, [employees, searchTerm, sortBy, onlyActive, companyFilter]);
 
   // ─── Dialog helpers ──────────────────────────────────────────────────────
 
@@ -668,6 +670,19 @@ ${signature}`;
                 <ArrowUpDown className="mr-2 h-4 w-4" />
                 {sortBy === "number" ? "Ordenar por Nome" : "Ordenar por Nº"}
               </Button>
+              <Select
+                value={companyFilter}
+                onValueChange={(v) => setCompanyFilter(v as any)}
+              >
+                <SelectTrigger className="w-full sm:w-[180px] text-xs h-9">
+                  <SelectValue placeholder="Filtrar por empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos os Pagadores</SelectItem>
+                  <SelectItem value="BUDDY">BUDDY</SelectItem>
+                  <SelectItem value="CASANA">CASANA</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardHeader>
           <CardContent>
@@ -932,6 +947,45 @@ ${signature}`;
                         placeholder="Digite o nome do novo cargo"
                         value={formData.role}
                         onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                        autoFocus
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Equipe */}
+                <div className="grid grid-cols-4 items-start gap-4">
+                  <Label className="text-right text-sm pt-2">Equipe</Label>
+                  <div className="col-span-3 space-y-2">
+                    <Select
+                      value={isNewTeam ? "nova_equipe" : formData.team}
+                      onValueChange={(v) => {
+                        if (v === "nova_equipe") {
+                          setIsNewTeam(true);
+                          setFormData(prev => ({ ...prev, team: "" }));
+                        } else {
+                          setIsNewTeam(false);
+                          setFormData(prev => ({ ...prev, team: v || "Geral" }));
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a equipe" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {uniqueTeams.map((t) => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                        <SelectItem value="nova_equipe" className="text-emerald-600 font-medium">
+                          + Adicionar nova equipe
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {isNewTeam && (
+                      <Input
+                        placeholder="Digite o nome da nova equipe"
+                        value={formData.team}
+                        onChange={(e) => setFormData(prev => ({ ...prev, team: e.target.value }))}
                         autoFocus
                       />
                     )}

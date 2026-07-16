@@ -43,7 +43,8 @@ type EmployeeRH = {
 // ─────────────────────────────────────────────────────────────
 function formatDate(dateStr?: string | null): string {
   if (!dateStr) return "\u2014";
-  const d = new Date(dateStr + "T12:00:00Z");
+  const datePart = dateStr.slice(0, 10);
+  const d = new Date(datePart + "T12:00:00Z");
   return d.toLocaleDateString("pt-BR");
 }
 

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, FileText, Search, LayoutGrid, List } from "lucide-react";
+import { Download, FileText, Search, LayoutGrid, List, ArrowUpDown } from "lucide-react";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
@@ -15,6 +15,7 @@ export default function RelatoriosPage() {
   const { employees, attendance } = useStore();
   const [searchTerm, setSearchTerm] = useState("");
   const [companyFilter, setCompanyFilter] = useState<'TODOS' | 'BUDDY' | 'CASANA'>('TODOS');
+  const [sortBy, setSortBy] = useState<'number' | 'name'>('number');
 
   const [monthStr, setMonthStr] = useState<string>(() => {
     const d = new Date();
@@ -64,11 +65,32 @@ export default function RelatoriosPage() {
     });
   }, [employees, attendance, monthStr, daysInMonth, year, month]);
 
-  const filteredData = reportData.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCompany = companyFilter === 'TODOS' || item.pagador === companyFilter;
-    return matchesSearch && matchesCompany;
-  });
+  const filteredData = useMemo(() => {
+    const filtered = reportData.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCompany = companyFilter === 'TODOS' || item.pagador === companyFilter;
+      return matchesSearch && matchesCompany;
+    });
+
+    if (sortBy === 'name') {
+      return [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    }
+
+    return [...filtered].sort((a, b) => {
+      const numA = parseInt(a.employee_number != null ? String(a.employee_number) : "", 10);
+      const numB = parseInt(b.employee_number != null ? String(b.employee_number) : "", 10);
+      const isNumA = !isNaN(numA);
+      const isNumB = !isNaN(numB);
+      
+      if (isNumA && isNumB) return numA - numB;
+      if (isNumA) return -1;
+      if (isNumB) return 1;
+      return (a.employee_number != null ? String(a.employee_number) : "").localeCompare(
+        b.employee_number != null ? String(b.employee_number) : "",
+        'pt-BR'
+      );
+    });
+  }, [reportData, searchTerm, companyFilter, sortBy]);
 
   const exportExcel = async () => {
     const workbook = new ExcelJS.Workbook();
@@ -144,7 +166,8 @@ export default function RelatoriosPage() {
     // Rows Data
     let rowIdx = 1;
     filteredData.forEach((emp) => {
-      const row = worksheet.addRow({ n: rowIdx++, name: emp.name });
+      const empNum = emp.employee_number != null && String(emp.employee_number).trim() !== "" ? emp.employee_number : rowIdx++;
+      const row = worksheet.addRow({ n: empNum, name: emp.name });
       row.height = 18;
 
       const nCellRow = row.getCell(1);
@@ -266,6 +289,22 @@ export default function RelatoriosPage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
+            </div>
+
+            <div className="w-full md:w-[200px]">
+              <Select
+                value={sortBy}
+                onValueChange={(v) => setSortBy(v as 'number' | 'name')}
+              >
+                <SelectTrigger className="w-full">
+                  <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground shrink-0" />
+                  <SelectValue placeholder="Ordenação" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="number">Ordenar por Nº</SelectItem>
+                  <SelectItem value="name">Ordem Alfabética (Nome)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="w-full md:w-[200px]">

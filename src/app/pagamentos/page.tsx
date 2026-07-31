@@ -144,35 +144,71 @@ interface PagarDialogProps {
   onClose: () => void;
   titulo: string;
   descricao: string;
-  onConfirm: (dataPagamento: string) => void;
+  valorInicial?: number;
+  onConfirm: (dataPagamento: string, valorPago?: number) => void;
 }
 
-function PagarDialog({ open, onClose, titulo, descricao, onConfirm }: PagarDialogProps) {
+function PagarDialog({ open, onClose, titulo, descricao, valorInicial, onConfirm }: PagarDialogProps) {
   const [dataPagamento, setDataPagamento] = useState(getTodayISO());
+  const [valorPago, setValorPago] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setDataPagamento(getTodayISO());
+      setValorPago(valorInicial !== undefined ? valorInicial.toFixed(2).replace(".", ",") : "");
+    }
+  }, [open, valorInicial]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{titulo}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">{descricao}</p>
-        <div className="space-y-2">
-          <Label htmlFor="data-pagamento">Data do Pagamento</Label>
-          <Input
-            id="data-pagamento"
-            type="date"
-            value={dataPagamento}
-            onChange={(e) => setDataPagamento(e.target.value)}
-          />
+        
+        <div className="grid gap-3 py-2">
+          {valorInicial !== undefined && (
+            <div className="space-y-1.5">
+              <Label htmlFor="valor-pago">Valor Pago (R$)</Label>
+              <Input
+                id="valor-pago"
+                type="text"
+                placeholder="0,00"
+                value={valorPago}
+                onChange={(e) => setValorPago(e.target.value)}
+                className="font-semibold"
+              />
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="data-pagamento">Data do Pagamento</Label>
+            <Input
+              id="data-pagamento"
+              type="date"
+              value={dataPagamento}
+              onChange={(e) => setDataPagamento(e.target.value)}
+            />
+          </div>
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancelar
           </Button>
           <Button
             onClick={() => {
-              onConfirm(dataPagamento);
+              let numValor: number | undefined = undefined;
+              if (valorInicial !== undefined && valorPago !== "") {
+                const cleaned = valorPago.trim();
+                numValor = cleaned.includes(",")
+                  ? parseFloat(cleaned.replace(/\./g, "").replace(",", ".")) || 0
+                  : parseFloat(cleaned) || 0;
+              } else if (valorInicial !== undefined) {
+                numValor = 0;
+              }
+              onConfirm(dataPagamento, numValor);
               onClose();
             }}
           >
@@ -481,7 +517,8 @@ export default function PagamentosPage() {
   const [dialogConfig, setDialogConfig] = useState<{
     titulo: string;
     descricao: string;
-    onConfirm: (data: string) => void;
+    valorInicial?: number;
+    onConfirm: (data: string, valor?: number) => void;
   } | null>(null);
 
   // ── Dialog de Imposto ──────────────────────────────────────────────────────
@@ -679,22 +716,32 @@ export default function PagamentosPage() {
 
   // ── Totais ─────────────────────────────────────────────────────────────────
   const totalQ1 = useMemo(() => {
-    return casanaEmployees.reduce((acc, e) => acc + calculateValorQ1(e), 0);
-  }, [casanaEmployees, mesSelecionado, anoSelecionado, attendance, salaryMappings]);
+    return casanaEmployees.reduce((acc, e) => {
+      const pag = getPagamento(e.id, "casana_q1");
+      if (pag?.status === "pago" && pag.valor_base !== undefined) return acc + pag.valor_base;
+      return acc + calculateValorQ1(e);
+    }, 0);
+  }, [casanaEmployees, mesSelecionado, anoSelecionado, attendance, salaryMappings, storePayments, pagamentos]);
 
   const totalQ2 = useMemo(() => {
-    return casanaEmployees.reduce((acc, e) => acc + calculateValorQ2(e), 0);
-  }, [casanaEmployees, liquidoContab, mesSelecionado, anoSelecionado, attendance, salaryMappings, storePayments]);
+    return casanaEmployees.reduce((acc, e) => {
+      const pag = getPagamento(e.id, "casana_q2");
+      if (pag?.status === "pago" && pag.valor_base !== undefined) return acc + pag.valor_base;
+      return acc + calculateValorQ2(e);
+    }, 0);
+  }, [casanaEmployees, liquidoContab, mesSelecionado, anoSelecionado, attendance, salaryMappings, storePayments, pagamentos]);
 
   const totalBuddy = useMemo(() => {
     return buddyEmployees.reduce((acc, e) => {
+      const pag = getPagamento(e.id, "buddy_mensal");
+      if (pag?.status === "pago" && pag.valor_base !== undefined) return acc + pag.valor_base;
       const isAvulso = e.employment_type === "Avulso";
       const diasMes = getDaysWorked(e.id, mesSelecionado, anoSelecionado, 1, 31);
       const gross = isAvulso ? (e.salary || 0) * diasMes : (e.salary || 0);
       const desconto = parseFloat(descontoBuddy[e.id] || "0") || 0;
       return acc + Math.max(0, gross - desconto);
     }, 0);
-  }, [buddyEmployees, descontoBuddy, mesSelecionado, anoSelecionado, attendance]);
+  }, [buddyEmployees, descontoBuddy, mesSelecionado, anoSelecionado, attendance, storePayments, pagamentos]);
 
   // ── Adicionar Imposto ──────────────────────────────────────────────────────
   async function adicionarImposto() {
@@ -895,7 +942,7 @@ export default function PagamentosPage() {
                               {emp.pix_type || "—"}
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-blue-700 dark:text-blue-300">
-                              <div>{formatMoney(valorQ1)}</div>
+                              <div>{formatMoney(pago && pag?.valor_base !== undefined ? pag.valor_base : valorQ1)}</div>
                               {isAvulso ? (
                                 <div className="text-xs text-muted-foreground font-normal">
                                   {diasQ1} {diasQ1 === 1 ? "diária" : "diárias"}
@@ -929,9 +976,10 @@ export default function PagamentosPage() {
                                   onClick={() =>
                                     abrirDialog({
                                       titulo: "Confirmar Pagamento — 1ª Quinzena",
-                                      descricao: `Marcar ${emp.name} como pago: ${formatMoney(valorQ1)}`,
-                                      onConfirm: (data) =>
-                                        marcarComoPago(emp.id, "casana_q1", valorQ1, data),
+                                      descricao: `Confirme ou edite os dados do pagamento para ${emp.name}`,
+                                      valorInicial: valorQ1,
+                                      onConfirm: (data, novoValor) =>
+                                        marcarComoPago(emp.id, "casana_q1", novoValor ?? valorQ1, data),
                                     })
                                   }
                                 >
@@ -948,15 +996,18 @@ export default function PagamentosPage() {
                                     size="sm"
                                     variant="ghost"
                                     className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                    title="Editar Data do Pagamento"
+                                    title="Editar Pagamento"
                                     onClick={() =>
                                       abrirDialog({
-                                        titulo: "Editar Data do Pagamento",
-                                        descricao: `Alterar a data de pagamento para ${emp.name}`,
-                                        onConfirm: async (newData) => {
+                                        titulo: "Editar Pagamento — 1ª Quinzena",
+                                        descricao: `Alterar os dados de pagamento para ${emp.name}`,
+                                        valorInicial: pag?.valor_base ?? valorQ1,
+                                        onConfirm: async (newData, novoValor) => {
                                           if (pag?.id) {
+                                            const val = novoValor ?? pag.valor_base ?? valorQ1;
                                             await updatePayment(pag.id, {
                                               paid_at: newData,
+                                              net_amount: val,
                                             });
                                           }
                                         },
@@ -1069,10 +1120,10 @@ export default function PagamentosPage() {
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-blue-700 dark:text-blue-300">
                               {isAvulso ? (
-                                <div>{formatMoney(valorQ2)}</div>
+                                <div>{formatMoney(pago && pag?.valor_base !== undefined ? pag.valor_base : valorQ2)}</div>
                               ) : (
                                 <div>
-                                  <div>{formatMoney(valorQ2)}</div>
+                                  <div>{formatMoney(pago && pag?.valor_base !== undefined ? pag.valor_base : valorQ2)}</div>
                                   <div className="text-[10px] text-muted-foreground font-normal leading-tight">
                                     {activeDaysQ2 < 15 && <div>Ativo: {activeDaysQ2}d</div>}
                                     {absencesQ2 > 0 && <div className="text-red-500 font-medium">Faltas: {absencesQ2}d</div>}
@@ -1102,11 +1153,14 @@ export default function PagamentosPage() {
                                   onClick={() =>
                                     abrirDialog({
                                       titulo: "Confirmar Pagamento — 2ª Quinzena",
-                                      descricao: `Marcar ${emp.name} como pago: ${formatMoney(valorQ2)}`,
-                                      onConfirm: (data) =>
-                                        marcarComoPago(emp.id, "casana_q2", valorQ2, data, {
-                                          valor_contabilidade: isAvulso ? valorQ2 : (liquido > 0 ? liquido : (q1Pago ? (q1Display + valorQ2) : valorQ2)),
-                                        }),
+                                      descricao: `Confirme ou edite os dados do pagamento para ${emp.name}`,
+                                      valorInicial: valorQ2,
+                                      onConfirm: (data, novoValor) => {
+                                        const val = novoValor ?? valorQ2;
+                                        marcarComoPago(emp.id, "casana_q2", val, data, {
+                                          valor_contabilidade: isAvulso ? val : (liquido > 0 ? liquido : (q1Pago ? (q1Display + val) : val)),
+                                        });
+                                      },
                                     })
                                   }
                                 >
@@ -1123,15 +1177,18 @@ export default function PagamentosPage() {
                                     size="sm"
                                     variant="ghost"
                                     className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                    title="Editar Data do Pagamento"
+                                    title="Editar Pagamento"
                                     onClick={() =>
                                       abrirDialog({
-                                        titulo: "Editar Data do Pagamento",
-                                        descricao: `Alterar a data de pagamento para ${emp.name}`,
-                                        onConfirm: async (newData) => {
+                                        titulo: "Editar Pagamento — 2ª Quinzena",
+                                        descricao: `Alterar os dados de pagamento para ${emp.name}`,
+                                        valorInicial: pag?.valor_base ?? valorQ2,
+                                        onConfirm: async (newData, novoValor) => {
                                           if (pag?.id) {
+                                            const val = novoValor ?? pag.valor_base ?? valorQ2;
                                             await updatePayment(pag.id, {
                                               paid_at: newData,
+                                              net_amount: val,
                                             });
                                           }
                                         },
@@ -1281,7 +1338,7 @@ export default function PagamentosPage() {
                           />
                         </td>
                         <td className="px-3 py-2 text-right font-semibold text-emerald-700 dark:text-emerald-300">
-                          {formatMoney(valorFinal)}
+                          {formatMoney(pago && pag?.valor_base !== undefined ? pag.valor_base : valorFinal)}
                         </td>
                         <td className="px-3 py-2 text-center">
                           {pago ? (
@@ -1305,9 +1362,10 @@ export default function PagamentosPage() {
                               onClick={() =>
                                 abrirDialog({
                                   titulo: "Confirmar Pagamento Mensal",
-                                  descricao: `Marcar ${emp.name} como pago: ${formatMoney(valorFinal)}`,
-                                  onConfirm: (data) =>
-                                    marcarComoPago(emp.id, "buddy_mensal", valorFinal, data, {
+                                  descricao: `Confirme ou edite os dados do pagamento para ${emp.name}`,
+                                  valorInicial: valorFinal,
+                                  onConfirm: (data, novoValor) =>
+                                    marcarComoPago(emp.id, "buddy_mensal", novoValor ?? valorFinal, data, {
                                       desconto,
                                     }),
                                 })
@@ -1323,15 +1381,18 @@ export default function PagamentosPage() {
                                 size="sm"
                                 variant="ghost"
                                 className="h-6 w-6 p-0 text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                title="Editar Data do Pagamento"
+                                title="Editar Pagamento Mensal"
                                 onClick={() =>
                                   abrirDialog({
-                                    titulo: "Editar Data do Pagamento",
-                                    descricao: `Alterar a data de pagamento para ${emp.name}`,
-                                    onConfirm: async (newData) => {
+                                    titulo: "Editar Pagamento Mensal",
+                                    descricao: `Alterar os dados de pagamento para ${emp.name}`,
+                                    valorInicial: pag?.valor_base ?? valorFinal,
+                                    onConfirm: async (newData, novoValor) => {
                                       if (pag?.id) {
+                                        const val = novoValor ?? pag.valor_base ?? valorFinal;
                                         await updatePayment(pag.id, {
                                           paid_at: newData,
+                                          net_amount: val,
                                         });
                                       }
                                     },
@@ -1561,8 +1622,14 @@ export default function PagamentosPage() {
                                   onClick={() =>
                                     abrirDialog({
                                       titulo: "Confirmar Pagamento de Imposto",
-                                      descricao: `Marcar "${tax.name}" como pago: ${formatMoney(tax.valor)}`,
-                                      onConfirm: (data) => marcarImpostoPago(tax.id, data),
+                                      descricao: `Confirme ou edite o valor do imposto "${tax.name}"`,
+                                      valorInicial: tax.valor,
+                                      onConfirm: async (data, novoValor) => {
+                                        if (novoValor !== undefined && novoValor !== tax.valor) {
+                                          await updateTax(tax.id, { amount: novoValor });
+                                        }
+                                        marcarImpostoPago(tax.id, data);
+                                      },
                                     })
                                   }
                                 >
@@ -1603,6 +1670,7 @@ export default function PagamentosPage() {
           onClose={() => setDialogOpen(false)}
           titulo={dialogConfig.titulo}
           descricao={dialogConfig.descricao}
+          valorInicial={dialogConfig.valorInicial}
           onConfirm={dialogConfig.onConfirm}
         />
       )}

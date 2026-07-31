@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import { useStore, Employee, SalaryHistory } from "@/store/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Plus, Search, Edit2, Trash2, User, UserX, UserCheck, DollarSign,
-  ClipboardList, Mail, ArrowUpDown, Hash, Copy, Check, Printer
+  ClipboardList, Mail, ArrowUpDown, Hash, Copy, Check, Printer,
+  Layers, ChevronDown, ChevronRight
 } from "lucide-react";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -190,6 +191,9 @@ export default function FuncionariosPage() {
   const [sortBy, setSortBy] = useState<"number" | "name">("number");
   const [onlyActive, setOnlyActive] = useState(true);
   const [companyFilter, setCompanyFilter] = useState<"TODOS" | "BUDDY" | "CASANA">("TODOS");
+  const [cargoFilter, setCargoFilter] = useState("TODOS");
+  const [agruparPorCargo, setAgruparPorCargo] = useState(false);
+  const [collapsedCargos, setCollapsedCargos] = useState<Record<string, boolean>>({});
   const [zoomedPhotoId, setZoomedPhotoId] = useState<string | null>(null);
 
   // ── Main dialog ──
@@ -249,12 +253,21 @@ export default function FuncionariosPage() {
 
   // ─── Filter & sort ───────────────────────────────────────────────────────
 
+  const availableRoles = useMemo(() => {
+    const set = new Set<string>();
+    employees.forEach((e) => {
+      set.add(e.role?.trim() || "Sem Cargo");
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [employees]);
+
   const filteredEmployees = useMemo(() => {
     const q = searchTerm.toLowerCase();
     const filtered = employees.filter(
       (emp) =>
         (onlyActive ? emp.status !== "inativo" : emp.status === "inativo") &&
-        (companyFilter === "TODOS" || emp.pagador === companyFilter) && (
+        (companyFilter === "TODOS" || emp.pagador === companyFilter) &&
+        (cargoFilter === "TODOS" || (emp.role?.trim() || "Sem Cargo") === cargoFilter) && (
           emp.name.toLowerCase().includes(q) ||
           (emp.cpf || "").includes(q) ||
           (emp.role || "").toLowerCase().includes(q)
@@ -274,7 +287,17 @@ export default function FuncionariosPage() {
       if (isNumB) return 1;
       return (a.employee_number != null ? String(a.employee_number) : "").localeCompare(b.employee_number != null ? String(b.employee_number) : "");
     });
-  }, [employees, searchTerm, sortBy, onlyActive, companyFilter]);
+  }, [employees, searchTerm, sortBy, onlyActive, companyFilter, cargoFilter]);
+
+  const groupedByCargo = useMemo(() => {
+    const map = new Map<string, Employee[]>();
+    filteredEmployees.forEach((emp) => {
+      const role = emp.role?.trim() || "Sem Cargo";
+      if (!map.has(role)) map.set(role, []);
+      map.get(role)!.push(emp);
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], "pt-BR"));
+  }, [filteredEmployees]);
 
   // ─── Dialog helpers ──────────────────────────────────────────────────────
 
@@ -490,8 +513,7 @@ export default function FuncionariosPage() {
   };
 
   const printChecklist = () => {
-    if (!checklistEmp) return;
-    const ehAjudante = (checklistEmp.role || "").toLowerCase().includes("ajudante") || !!checklistEmp.salary_family;
+    const ehAjudante = checklistEmp ? ((checklistEmp.role || "").toLowerCase().includes("ajudante") || !!checklistEmp.salary_family) : false;
     const items = DOCS_ADMISSAO.filter(d => d.k !== "filhos" || ehAjudante);
     
     const w = window.open("", "_blank");
@@ -499,11 +521,10 @@ export default function FuncionariosPage() {
     w.document.write(`
       <html>
         <head>
-          <title>Checklist - ${checklistEmp.name}</title>
+          <title>Checklist de Documentação — Admissão</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 30px; color: #111; }
-            h2 { margin: 0 0 10px 0; }
-            p { margin: 0 0 20px 0; color: #555; }
+            h2 { margin: 0 0 20px 0; }
             ul { list-style: none; padding: 0; }
             li { margin: 12px 0; font-size: 16px; display: flex; align-items: center; gap: 10px; }
             small { color: #666; font-size: 12px; }
@@ -511,7 +532,6 @@ export default function FuncionariosPage() {
         </head>
         <body>
           <h2>Checklist de Documentação — Admissão</h2>
-          <p><b>${checklistEmp.name}</b>${checklistEmp.role ? ` · ${checklistEmp.role}` : ""}</p>
           <ul>
             ${items.map(d => `<li>⬜ ${d.t} ${d.obs ? `<small>(${d.obs})</small>` : ""}</li>`).join("")}
           </ul>
@@ -606,6 +626,82 @@ ${signature}`;
     setTimeout(() => setEmailCopySuccess(false), 2000);
   };
 
+  const renderEmployeeRow = (emp: Employee) => (
+    <TableRow key={emp.id} className={emp.status === "inativo" ? "opacity-60" : ""}>
+      <TableCell className="font-mono text-xs text-muted-foreground">
+        {emp.employee_number ?? "-"}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-3">
+          <div 
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoomedPhotoId(zoomedPhotoId === emp.id ? null : emp.id);
+            }}
+            className={cn(
+              "relative size-10 rounded-full border bg-muted flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-200 origin-left cursor-pointer shadow-sm hover:scale-[2.5] hover:z-20",
+              zoomedPhotoId === emp.id ? "scale-[2.5] z-20" : ""
+            )}
+          >
+            {emp.photo_url ? (
+              <img src={emp.photo_url} alt={emp.name} className="size-full object-cover" />
+            ) : (
+              <User className="size-5 text-muted-foreground" />
+            )}
+          </div>
+          <div>
+            <p className="font-medium">{emp.name}</p>
+            {emp.nickname && <p className="text-xs text-muted-foreground">{emp.nickname}</p>}
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className="hidden lg:table-cell text-sm">{emp.role || "-"}</TableCell>
+      <TableCell className="hidden xl:table-cell">
+        {emp.pagador ? (
+          <Badge
+            className={
+              emp.pagador === "BUDDY"
+                ? "bg-blue-500 hover:bg-blue-600 text-white border-transparent"
+                : "bg-emerald-600 hover:bg-emerald-700 text-white border-transparent"
+            }
+          >
+            {emp.pagador}
+          </Badge>
+        ) : "-"}
+      </TableCell>
+      <TableCell className="hidden xl:table-cell text-sm">{emp.employment_type || "-"}</TableCell>
+      <TableCell className="hidden lg:table-cell text-sm">{formatCurrency(emp.salary)}</TableCell>
+      <TableCell className="hidden md:table-cell">
+        <StatusBadge status={emp.status || "ativo"} />
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-0.5 flex-wrap">
+          <Button variant="ghost" size="icon" onClick={() => openEditDialog(emp)} title="Editar">
+            <Edit2 className="h-4 w-4 text-muted-foreground" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => openSalaryDialog(emp)}
+            title="Histórico Salarial"
+          >
+            <DollarSign className="h-4 w-4 text-emerald-600" />
+          </Button>
+          {emp.status === "ativo" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleFire(emp)}
+              title="Demitir / Aviso Prévio"
+            >
+              <UserX className="h-4 w-4 text-orange-500" />
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -651,12 +747,12 @@ ${signature}`;
             <CardTitle>
               {onlyActive ? "Lista de Funcionários Ativos" : "Lista de Funcionários Demitidos"}
             </CardTitle>
-            <div className="flex flex-col sm:flex-row gap-3 pt-3">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-col md:flex-row flex-wrap gap-2.5 pt-3 items-stretch md:items-center">
+              <div className="relative flex-1 min-w-[240px] max-w-md">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Buscar por nome, CPF/CNPJ ou cargo..."
-                  className="pl-8"
+                  className="pl-8 h-9 text-xs sm:text-sm"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -665,7 +761,7 @@ ${signature}`;
                 variant="outline"
                 size="sm"
                 onClick={() => setSortBy(sortBy === "number" ? "name" : "number")}
-                className="whitespace-nowrap"
+                className="whitespace-nowrap h-9 text-xs sm:text-sm font-medium"
               >
                 <ArrowUpDown className="mr-2 h-4 w-4" />
                 {sortBy === "number" ? "Ordenar por Nome" : "Ordenar por Nº"}
@@ -674,7 +770,7 @@ ${signature}`;
                 value={companyFilter}
                 onValueChange={(v) => setCompanyFilter(v as any)}
               >
-                <SelectTrigger className="w-full sm:w-[180px] text-xs h-9">
+                <SelectTrigger className="w-full sm:w-[170px] text-xs h-9 font-medium">
                   <SelectValue placeholder="Filtrar por empresa" />
                 </SelectTrigger>
                 <SelectContent>
@@ -683,6 +779,29 @@ ${signature}`;
                   <SelectItem value="CASANA">CASANA</SelectItem>
                 </SelectContent>
               </Select>
+              <Select
+                value={cargoFilter}
+                onValueChange={(v) => setCargoFilter(v || "TODOS")}
+              >
+                <SelectTrigger className="w-full sm:w-[190px] text-xs h-9 font-medium">
+                  <SelectValue placeholder="Filtrar por Cargo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos os Cargos</SelectItem>
+                  {availableRoles.map((role) => (
+                    <SelectItem key={role} value={role}>{role}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant={agruparPorCargo ? "default" : "outline"}
+                size="sm"
+                onClick={() => setAgruparPorCargo(!agruparPorCargo)}
+                className={cn("whitespace-nowrap h-9 text-xs sm:text-sm font-medium transition-all", agruparPorCargo ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm" : "")}
+              >
+                <Layers className="mr-1.5 h-4 w-4" />
+                {agruparPorCargo ? "Desagrupar Cargo" : "Agrupar por Cargo"}
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
@@ -703,86 +822,36 @@ ${signature}`;
               <TableBody>
                 {filteredEmployees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       Nenhum funcionário encontrado.
                     </TableCell>
                   </TableRow>
-                ) : (
-                  filteredEmployees.map((emp) => (
-                    <TableRow key={emp.id} className={emp.status === "inativo" ? "opacity-60" : ""}>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {emp.employee_number ?? "-"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setZoomedPhotoId(zoomedPhotoId === emp.id ? null : emp.id);
-                            }}
-                            className={cn(
-                              "relative size-10 rounded-full border bg-muted flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-200 origin-left cursor-pointer shadow-sm hover:scale-[2.5] hover:z-20",
-                              zoomedPhotoId === emp.id ? "scale-[2.5] z-20" : ""
-                            )}
-                          >
-                            {emp.photo_url ? (
-                              <img src={emp.photo_url} alt={emp.name} className="size-full object-cover" />
+                ) : agruparPorCargo ? (
+                  groupedByCargo.map(([role, emps]) => (
+                    <Fragment key={role}>
+                      <TableRow
+                        className="bg-muted/70 dark:bg-slate-800/80 hover:bg-muted dark:hover:bg-slate-800 cursor-pointer select-none transition-colors border-y font-medium"
+                        onClick={() => setCollapsedCargos((prev) => ({ ...prev, [role]: !prev[role] }))}
+                      >
+                        <TableCell colSpan={8} className="py-2.5 font-bold text-sm text-blue-700 dark:text-blue-300">
+                          <div className="flex items-center gap-2">
+                            {collapsedCargos[role] ? (
+                              <ChevronRight className="size-4 text-muted-foreground" />
                             ) : (
-                              <User className="size-5 text-muted-foreground" />
+                              <ChevronDown className="size-4 text-muted-foreground" />
                             )}
+                            <span className="uppercase tracking-wide">{role}</span>
+                            <Badge variant="secondary" className="ml-1 text-xs font-normal">
+                              {emps.length} {emps.length === 1 ? "colaborador" : "colaboradores"}
+                            </Badge>
                           </div>
-                          <div>
-                            <p className="font-medium">{emp.name}</p>
-                            {emp.nickname && <p className="text-xs text-muted-foreground">{emp.nickname}</p>}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell text-sm">{emp.role || "-"}</TableCell>
-                      <TableCell className="hidden xl:table-cell">
-                        {emp.pagador ? (
-                          <Badge
-                            className={
-                              emp.pagador === "BUDDY"
-                                ? "bg-blue-500 hover:bg-blue-600 text-white border-transparent"
-                                : "bg-emerald-600 hover:bg-emerald-700 text-white border-transparent"
-                            }
-                          >
-                            {emp.pagador}
-                          </Badge>
-                        ) : "-"}
-                      </TableCell>
-                      <TableCell className="hidden xl:table-cell text-sm">{emp.employment_type || "-"}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-sm">{formatCurrency(emp.salary)}</TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        <StatusBadge status={emp.status || "ativo"} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-0.5 flex-wrap">
-                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(emp)} title="Editar">
-                            <Edit2 className="h-4 w-4 text-muted-foreground" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openSalaryDialog(emp)}
-                            title="Histórico Salarial"
-                          >
-                            <DollarSign className="h-4 w-4 text-emerald-600" />
-                          </Button>
-                          {emp.status === "ativo" && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleFire(emp)}
-                              title="Demitir / Aviso Prévio"
-                            >
-                              <UserX className="h-4 w-4 text-orange-500" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                        </TableCell>
+                      </TableRow>
+                      {!collapsedCargos[role] && emps.map((emp) => renderEmployeeRow(emp))}
+                    </Fragment>
                   ))
+                ) : (
+                  filteredEmployees.map((emp) => renderEmployeeRow(emp))
                 )}
               </TableBody>
             </Table>

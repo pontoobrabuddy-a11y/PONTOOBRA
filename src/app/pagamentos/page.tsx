@@ -274,8 +274,22 @@ export default function PagamentosPage() {
   const calculateValorQ2 = (emp: Employee) => {
     const isAvulso = emp.employment_type === "Avulso";
     const diasQ2 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 16, 31);
+
+    // Verificar se a 1ª Quinzena foi paga
+    const q1Record = storePayments.find(
+      (sp) =>
+        sp.employee_id === emp.id &&
+        sp.payment_type === "quinzena1" &&
+        sp.period_month === mesSelecionado &&
+        sp.period_year === anoSelecionado
+    );
+    const isQ1Paid = q1Record?.paid === true;
+    const valorQ1 = calculateValorQ1(emp);
+    const q1Deduct = isQ1Paid ? (q1Record.net_amount !== undefined ? q1Record.net_amount : valorQ1) : 0;
+    const unpaidQ1 = !isQ1Paid ? valorQ1 : 0;
+
     if (isAvulso) {
-      return (emp.salary || 0) * diasQ2;
+      return ((emp.salary || 0) * diasQ2) + unpaidQ1;
     }
     const activeDaysQ2 = getActiveDaysInPeriod(emp, 16, 30);
     const absencesQ2 = getAbsencesInPeriod(emp.id, 16, 31);
@@ -288,10 +302,9 @@ export default function PagamentosPage() {
     const liquido = parseFloat(liquidoStr.replace(",", ".")) || 0;
     
     if (liquido > 0) {
-      const valorQ1 = calculateValorQ1(emp);
-      return Math.max(0, liquido - valorQ1);
+      return Math.max(0, liquido - q1Deduct);
     }
-    return precalcQ2;
+    return precalcQ2 + unpaidQ1;
   };
 
   const getDaysWorked = (employeeId: string, month: number, year: number, startDay: number, endDay: number) => {
@@ -374,7 +387,15 @@ export default function PagamentosPage() {
       const valor = parseFloat(val.replace(",", ".")) || 0;
       if (valor > 0 && !dbData[empId]) {
         const emp = employees.find(e => e.id === empId);
-        const q1Valor = (emp?.salary || 0) / 2;
+        const q1Record = storePayments.find(
+          (sp) =>
+            sp.employee_id === empId &&
+            sp.payment_type === "quinzena1" &&
+            sp.period_month === mesSelecionado &&
+            sp.period_year === anoSelecionado
+        );
+        const isQ1Paid = q1Record?.paid === true;
+        const q1Valor = isQ1Paid ? (q1Record.net_amount !== undefined ? q1Record.net_amount : (emp?.salary || 0) / 2) : 0;
         const net = Math.max(0, valor - q1Valor);
         
         await addPayment({
@@ -589,7 +610,16 @@ export default function PagamentosPage() {
     const emp = employees.find(e => e.id === employeeId);
     if (!emp) return;
     const valorQ1 = calculateValorQ1(emp);
-    const net = valorContab > 0 ? Math.max(0, valorContab - valorQ1) : 0;
+    const q1Record = storePayments.find(
+      (sp) =>
+        sp.employee_id === employeeId &&
+        sp.payment_type === "quinzena1" &&
+        sp.period_month === mesSelecionado &&
+        sp.period_year === anoSelecionado
+    );
+    const isQ1Paid = q1Record?.paid === true;
+    const q1Deduct = isQ1Paid ? (q1Record.net_amount !== undefined ? q1Record.net_amount : valorQ1) : 0;
+    const net = valorContab > 0 ? Math.max(0, valorContab - q1Deduct) : 0;
 
     if (existing) {
       await updatePayment(existing.id, {
@@ -654,7 +684,7 @@ export default function PagamentosPage() {
 
   const totalQ2 = useMemo(() => {
     return casanaEmployees.reduce((acc, e) => acc + calculateValorQ2(e), 0);
-  }, [casanaEmployees, liquidoContab, mesSelecionado, anoSelecionado, attendance, salaryMappings]);
+  }, [casanaEmployees, liquidoContab, mesSelecionado, anoSelecionado, attendance, salaryMappings, storePayments]);
 
   const totalBuddy = useMemo(() => {
     return buddyEmployees.reduce((acc, e) => {
@@ -1075,7 +1105,7 @@ export default function PagamentosPage() {
                                       descricao: `Marcar ${emp.name} como pago: ${formatMoney(valorQ2)}`,
                                       onConfirm: (data) =>
                                         marcarComoPago(emp.id, "casana_q2", valorQ2, data, {
-                                          valor_contabilidade: isAvulso ? valorQ2 : (liquido > 0 ? liquido : (valorQ1 + valorQ2)),
+                                          valor_contabilidade: isAvulso ? valorQ2 : (liquido > 0 ? liquido : (q1Pago ? (q1Display + valorQ2) : valorQ2)),
                                         }),
                                     })
                                   }

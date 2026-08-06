@@ -119,14 +119,37 @@ export const useStore = create<AppState>()((set, get) => ({
     const { data: empData, error: empError } = await supabase.from('employees').select('*').order('employee_number', { ascending: true, nullsFirst: false });
     if (empError) console.error("Error fetching employees:", empError);
 
-    // Fetch attendance
-    const { data: attData, error: attError } = await supabase.from('attendance').select('*');
-    if (attError) console.error("Error fetching attendance:", attError);
+    // Fetch attendance (paginated to handle >1000 rows)
+    let allAttData: any[] = [];
+    let hasMore = true;
+    let page = 0;
+    while (hasMore) {
+      const { data: attData, error: attError } = await supabase
+        .from('attendance')
+        .select('*')
+        .range(page * 1000, (page + 1) * 1000 - 1);
+        
+      if (attError) {
+        console.error("Error fetching attendance:", attError);
+        break;
+      }
+      
+      if (attData && attData.length > 0) {
+        allAttData = [...allAttData, ...attData];
+        if (attData.length < 1000) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      } else {
+        hasMore = false;
+      }
+    }
 
     // Transform attendance data
     const attendanceRecord: Record<string, Record<string, AttendanceRecord>> = {};
-    if (attData) {
-      attData.forEach(item => {
+    if (allAttData.length > 0) {
+      allAttData.forEach(item => {
         if (!attendanceRecord[item.date]) {
           attendanceRecord[item.date] = {};
         }

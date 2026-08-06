@@ -87,7 +87,7 @@ interface AppState {
   addEmployee: (emp: Omit<Employee, 'id'>) => Promise<void>;
   updateEmployee: (id: string, data: Partial<Employee>) => Promise<void>;
   deleteEmployee: (id: string) => Promise<void>;
-  saveAttendance: (date: string, data: Record<string, AttendanceRecord>) => Promise<void>;
+  saveAttendance: (date: string, data: Record<string, AttendanceRecord>) => Promise<boolean>;
   setDraftAttendance: (date: string, data: Record<string, AttendanceRecord>) => void;
 
   fetchPayments: () => Promise<void>;
@@ -185,7 +185,7 @@ export const useStore = create<AppState>()((set, get) => ({
       observation: data[employeeId].observation || null
     }));
 
-    if (upserts.length === 0) return;
+    if (upserts.length === 0) return true;
 
     const { error } = await supabase
       .from('attendance')
@@ -193,13 +193,14 @@ export const useStore = create<AppState>()((set, get) => ({
 
     if (error) {
       console.error("Error saving attendance:", error);
-      return;
+      return false;
     }
 
     set((state) => ({
       attendance: { ...state.attendance, [date]: { ...state.attendance[date], ...data } },
       draftAttendance: { ...state.draftAttendance, [date]: {} }
     }));
+    return true;
   },
 
   setDraftAttendance: (date, data) => set((state) => ({

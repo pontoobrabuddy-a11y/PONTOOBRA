@@ -22,7 +22,11 @@ const statusConfig = {
 export default function ApontamentoPage() {
   const { employees, attendance, draftAttendance, setDraftAttendance, saveAttendance } = useStore();
   const [searchTerm, setSearchTerm] = useState("");
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState<string>(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().split('T')[0];
+  });
   
   // Observation Dialog
   const [obsDialogOpen, setObsDialogOpen] = useState(false);
@@ -112,7 +116,7 @@ export default function ApontamentoPage() {
     setObsDialogOpen(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const activeEmployees = employees.filter(emp => {
       if (emp.status === "inativo") return false;
       if (emp.admission_date) {
@@ -122,13 +126,30 @@ export default function ApontamentoPage() {
       return true;
     });
     const unrecorded = activeEmployees.filter(e => !currentAttendance[e.id] || currentAttendance[e.id].status === null);
+    
+    const dataToSave = { ...currentAttendance };
+    unrecorded.forEach(emp => {
+      delete dataToSave[emp.id];
+    });
+
     if (unrecorded.length > 0) {
-      alert(`Atenção: ${unrecorded.length} funcionários ainda não tiveram o apontamento preenchido.`);
+      const names = unrecorded.slice(0, 5).map(e => e.name).join(', ');
+      const more = unrecorded.length > 5 ? ` e mais ${unrecorded.length - 5}` : '';
+      const confirmSave = confirm(`Atenção: ${unrecorded.length} funcionário(s) ainda não tiveram o apontamento preenchido.\n\nFalta marcar: ${names}${more}.\n\nDeseja salvar o apontamento mesmo assim (apenas os já preenchidos)?`);
+      if (!confirmSave) return;
+    }
+
+    if (Object.keys(dataToSave).length === 0) {
+      alert("Nenhum apontamento preenchido para salvar.");
       return;
     }
     
-    saveAttendance(date, currentAttendance);
-    alert("Apontamento salvo com sucesso!");
+    const success = await saveAttendance(date, dataToSave);
+    if (success) {
+      alert("Apontamento salvo com sucesso!");
+    } else {
+      alert("Erro ao salvar o apontamento. Verifique sua conexão e tente novamente.");
+    }
   };
 
   const filteredEmployees = employees.filter(emp => {

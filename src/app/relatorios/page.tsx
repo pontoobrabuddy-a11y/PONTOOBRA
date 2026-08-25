@@ -12,7 +12,7 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
 export default function RelatoriosPage() {
-  const { employees, attendance } = useStore();
+  const { employees, attendance, payments } = useStore();
   const [searchTerm, setSearchTerm] = useState("");
   const [companyFilter, setCompanyFilter] = useState<'TODOS' | 'BUDDY' | 'CASANA'>('TODOS');
   const [sortBy, setSortBy] = useState<'number' | 'name'>('number');
@@ -100,6 +100,11 @@ export default function RelatoriosPage() {
     const columns = [
       { header: "", key: "n", width: 5 },
       { header: "", key: "name", width: 40 },
+      { header: "", key: "role", width: 20 },
+      { header: "", key: "vr", width: 10 },
+      { header: "", key: "bruto", width: 15 },
+      { header: "", key: "liquido", width: 15 },
+      { header: "", key: "pago", width: 15 },
     ];
     
     days.forEach(date => {
@@ -111,7 +116,7 @@ export default function RelatoriosPage() {
     // Row 1: Headers (Dates)
     const headerRow1 = worksheet.getRow(1);
     headerRow1.height = 20;
-    worksheet.mergeCells('A1:B1');
+    worksheet.mergeCells('A1:G1');
     const titleCell = headerRow1.getCell(1);
     titleCell.value = "TRABALHADORES GERAIS DA OBRA";
     titleCell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Calibri' };
@@ -119,7 +124,7 @@ export default function RelatoriosPage() {
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
     days.forEach((date, index) => {
-      const cell = headerRow1.getCell(index + 3);
+      const cell = headerRow1.getCell(index + 8);
       const shortMonth = date.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
       cell.value = `${date.getDate()}-${shortMonth}.`;
       cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 9, name: 'Calibri' };
@@ -148,9 +153,22 @@ export default function RelatoriosPage() {
     nameCell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Calibri' };
     nameCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
     nameCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    
+    [
+      { cell: headerRow2.getCell(3), label: "Cargo" },
+      { cell: headerRow2.getCell(4), label: "VR" },
+      { cell: headerRow2.getCell(5), label: "Bruto Mês" },
+      { cell: headerRow2.getCell(6), label: "Líquido Mês" },
+      { cell: headerRow2.getCell(7), label: "Pago Mês" }
+    ].forEach(({ cell, label }) => {
+      cell.value = label;
+      cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Calibri' };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
 
     days.forEach((date, index) => {
-      const cell = headerRow2.getCell(index + 3);
+      const cell = headerRow2.getCell(index + 8);
       cell.value = dayNames[date.getDay()];
       cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 9, name: 'Calibri' };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
@@ -166,18 +184,39 @@ export default function RelatoriosPage() {
     // Rows Data
     let rowIdx = 1;
     filteredData.forEach((emp) => {
+      const empPayments = payments.filter(p => p.employee_id === emp.id && p.period_month === month + 1 && p.period_year === year);
+      const brutoMes = empPayments.reduce((acc, p) => acc + p.gross_amount, 0);
+      const liquidoMes = empPayments.reduce((acc, p) => acc + p.net_amount, 0);
+      const pagoMes = empPayments.filter(p => p.paid).reduce((acc, p) => acc + p.net_amount, 0);
+
       const empNum = emp.employee_number != null && String(emp.employee_number).trim() !== "" ? emp.employee_number : rowIdx++;
-      const row = worksheet.addRow({ n: empNum, name: emp.name });
+      const row = worksheet.addRow({ 
+        n: empNum, 
+        name: emp.name,
+        role: emp.role || "-",
+        vr: emp.recebe_vr ? "Sim" : "Não",
+        bruto: brutoMes > 0 ? brutoMes : "-",
+        liquido: liquidoMes > 0 ? liquidoMes : "-",
+        pago: pagoMes > 0 ? pagoMes : "-"
+      });
       row.height = 18;
 
-      const nCellRow = row.getCell(1);
-      nCellRow.alignment = { horizontal: 'center', vertical: 'middle' };
-      nCellRow.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      const styleCell = (c: any) => {
+        c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        c.alignment = { vertical: 'middle', horizontal: 'center' };
+      };
+      
+      styleCell(row.getCell(1));
       
       const nameCellRow = row.getCell(2);
       nameCellRow.font = { bold: true, name: 'Calibri', size: 10 };
       nameCellRow.alignment = { vertical: 'middle', indent: 1 };
       nameCellRow.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      
+      [3, 4, 5, 6, 7].forEach(idx => styleCell(row.getCell(idx)));
+      row.getCell(5).numFmt = '"R$ "#,##0.00';
+      row.getCell(6).numFmt = '"R$ "#,##0.00';
+      row.getCell(7).numFmt = '"R$ "#,##0.00';
       
       days.forEach((date, dateIndex) => {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -226,6 +265,22 @@ export default function RelatoriosPage() {
         }
       });
     });
+
+    const footerRow = worksheet.addRow({});
+    footerRow.height = 20;
+    worksheet.mergeCells(`A${footerRow.number}:G${footerRow.number}`);
+    const footerTitle = footerRow.getCell(1);
+    footerTitle.value = "TOTAL GERAL DE FALTAS (Não Justificadas)";
+    footerTitle.font = { bold: true, name: 'Calibri', size: 10 };
+    footerTitle.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+    
+    worksheet.mergeCells(`H${footerRow.number}:${footerRow.getCell(days.length + 7).address}`);
+    const footerValue = footerRow.getCell(8);
+    const totalFaltas = filteredData.reduce((acc, item) => acc + item.absences, 0);
+    const totalMeias = filteredData.reduce((acc, item) => acc + item.half_presences, 0);
+    footerValue.value = `${totalFaltas} Faltas inteiras e ${totalMeias} Meias-faltas`;
+    footerValue.font = { bold: true, color: { argb: 'FFC00000' }, name: 'Calibri', size: 10 };
+    footerValue.alignment = { vertical: 'middle', indent: 1 };
 
     const buffer = await workbook.xlsx.writeBuffer();
     saveAs(new Blob([buffer]), `relatorio_presenca_${monthStr}.xlsx`);
@@ -349,6 +404,11 @@ export default function RelatoriosPage() {
                 ) : (
                   <TableRow>
                     <TableHead className="sticky left-0 z-20 bg-slate-50 dark:bg-slate-900 min-w-[200px] border-r">Funcionário</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[120px] border-r text-center">Cargo</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[80px] border-r text-center">VR</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[100px] border-r text-center">Bruto Mês</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[100px] border-r text-center">Líquido Mês</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[100px] border-r text-center">Pago Mês</TableHead>
                     {days.map(date => (
                       <TableHead key={date.toISOString()} className="text-center w-12 border-r px-1 last:border-0">
                         <div className="flex flex-col items-center">
@@ -386,10 +446,34 @@ export default function RelatoriosPage() {
                         </TableRow>
                       );
                     } else {
+                      const empPayments = payments.filter(p => p.employee_id === item.id && p.period_month === month + 1 && p.period_year === year);
+                      const brutoMes = empPayments.reduce((acc, p) => acc + p.gross_amount, 0);
+                      const liquidoMes = empPayments.reduce((acc, p) => acc + p.net_amount, 0);
+                      const pagoMes = empPayments.filter(p => p.paid).reduce((acc, p) => acc + p.net_amount, 0);
+
                       return (
                         <TableRow key={item.id}>
                           <TableCell className="sticky left-0 z-20 bg-background font-medium border-r truncate max-w-[250px]" title={item.name}>
                             {item.name}
+                          </TableCell>
+                          <TableCell className="border-r text-center text-xs truncate max-w-[120px]" title={item.role || "—"}>
+                            {item.role || "—"}
+                          </TableCell>
+                          <TableCell className="border-r text-center font-medium text-xs">
+                            {item.recebe_vr ? <span className="text-emerald-600">Sim</span> : <span className="text-muted-foreground">Não</span>}
+                          </TableCell>
+                          <TableCell className="border-r text-center font-mono text-xs">
+                            {brutoMes > 0 ? `R$ ${brutoMes.toFixed(2)}` : "—"}
+                          </TableCell>
+                          <TableCell className="border-r text-center font-mono text-xs">
+                            {liquidoMes > 0 ? `R$ ${liquidoMes.toFixed(2)}` : "—"}
+                          </TableCell>
+                          <TableCell className="border-r text-center font-mono text-xs">
+                            {pagoMes > 0 ? (
+                              <span className={pagoMes >= liquidoMes && liquidoMes > 0 ? "text-emerald-600 font-bold" : "text-orange-600"}>
+                                R$ {pagoMes.toFixed(2)}
+                              </span>
+                            ) : "—"}
                           </TableCell>
                           {days.map(date => {
                             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -423,6 +507,16 @@ export default function RelatoriosPage() {
                       );
                     }
                   })
+                )}
+                {viewMode === 'espelho' && filteredData.length > 0 && (
+                  <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <TableCell colSpan={6} className="sticky left-0 z-20 bg-slate-100 dark:bg-slate-800 text-right border-r px-4 py-3">
+                      TOTAL GERAL DE FALTAS (Não Justificadas)
+                    </TableCell>
+                    <TableCell colSpan={days.length} className="text-left px-4 text-red-600 dark:text-red-400">
+                      {filteredData.reduce((acc, item) => acc + item.absences, 0)} Faltas inteiras e {filteredData.reduce((acc, item) => acc + item.half_presences, 0)} Meias-faltas
+                    </TableCell>
+                  </TableRow>
                 )}
               </TableBody>
             </Table>

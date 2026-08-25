@@ -110,6 +110,7 @@ type FormState = {
   pix_type: string;
   pix_key: string;
   salary_family: boolean;
+  recebe_vr: boolean;
   status: string;
   dismissal_type: string;
   notice_start_date: string;
@@ -133,6 +134,7 @@ const defaultForm: FormState = {
   pix_type: "",
   pix_key: "",
   salary_family: false,
+  recebe_vr: false,
   status: "ativo",
   dismissal_type: "",
   notice_start_date: "",
@@ -346,6 +348,7 @@ export default function FuncionariosPage() {
       pix_type: emp.pix_type || "",
       pix_key: emp.pix_key || "",
       salary_family: emp.salary_family || false,
+      recebe_vr: emp.recebe_vr || false,
       status: emp.status || "ativo",
       dismissal_type: emp.dismissal_type || "",
       notice_start_date: emp.notice_start_date || "",
@@ -387,6 +390,7 @@ export default function FuncionariosPage() {
       pix_type: (formData.pix_type as Employee["pix_type"]) || undefined,
       pix_key: formData.pix_key || undefined,
       salary_family: formData.salary_family,
+      recebe_vr: formData.recebe_vr,
       dismissal_type: (formData.dismissal_type as Employee["dismissal_type"]) || undefined,
       notice_start_date: formData.notice_start_date || undefined,
       notice_end_date: formData.notice_end_date || undefined,
@@ -1060,6 +1064,23 @@ ${signature}`;
                     )}
                   </div>
                 </div>
+
+                 {/* Vale Refeição */}
+                 <div className="grid grid-cols-4 items-center gap-4">
+                     <Label className="text-right text-sm">Vale Refeição</Label>
+                     <div className="col-span-3 flex items-center space-x-2">
+                       <input 
+                         type="checkbox" 
+                         id="recebe_vr"
+                         className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                         checked={formData.recebe_vr}
+                         onChange={(e) => setFormData({ ...formData, recebe_vr: e.target.checked })}
+                       />
+                       <Label htmlFor="recebe_vr" className="text-sm cursor-pointer">
+                         Recebe Vale Refeição
+                       </Label>
+                     </div>
+                 </div>
 
                 {/* Data de Admissão */}
                 <div className="grid grid-cols-4 items-center gap-4">

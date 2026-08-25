@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CheckCircle, Clock, AlertCircle, Plus, Wallet, Trash2, Edit2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ─── Types locais (compatíveis com o que o useStore deve exportar) ────────────
 
@@ -925,7 +926,7 @@ export default function PagamentosPage() {
                         const pag = getPagamento(emp.id, "casana_q1");
                         const pago = pag?.status === "pago";
                         return (
-                          <tr key={emp.id} className="border-t hover:bg-muted/30 transition-colors">
+                          <tr key={emp.id} className={cn("border-t transition-colors", pago ? "bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-900/40" : "hover:bg-muted/30")}>
                             <td className="px-3 py-2 text-muted-foreground">
                               {isAvulso ? "—" : (emp.employee_number || String(idx + 1).padStart(3, "0"))}
                             </td>
@@ -1094,7 +1095,7 @@ export default function PagamentosPage() {
                         const pago = pag?.status === "pago";
 
                         return (
-                          <tr key={emp.id} className="border-t hover:bg-muted/30 transition-colors">
+                          <tr key={emp.id} className={cn("border-t transition-colors", pago ? "bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-900/40" : "hover:bg-muted/30")}>
                             <td className="px-3 py-2 text-muted-foreground">
                               {isAvulso ? "—" : (emp.employee_number || String(idx + 1).padStart(3, "0"))}
                             </td>
@@ -1303,7 +1304,7 @@ export default function PagamentosPage() {
                        : `${BUDDY_EMPRESA} (${BUDDY_CNPJ})`;
 
                      return (
-                       <tr key={emp.id} className="border-t hover:bg-muted/30 transition-colors">
+                       <tr key={emp.id} className={cn("border-t transition-colors", pago ? "bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-900/40" : "hover:bg-muted/30")}>
                          <td className="px-3 py-2 text-muted-foreground">
                            {isAvulso ? "—" : (emp.employee_number || String(idx + 1).padStart(3, "0"))}
                          </td>

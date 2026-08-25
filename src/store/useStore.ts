@@ -28,6 +28,7 @@ export interface Employee {
   last_work_date?: string;
   dismissal_type?: 'pedido_com' | 'pedido_sem' | 'empresa_com' | 'empresa_sem';
   salary_family?: boolean;
+  recebe_vr?: boolean;
   photo_url?: string | null;
 }
 

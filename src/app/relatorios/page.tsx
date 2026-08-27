@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useStore } from "@/store/useStore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,13 @@ import { saveAs } from 'file-saver';
 
 export default function RelatoriosPage() {
   const { employees, attendance, payments } = useStore();
+  const [salaryMappings, setSalaryMappings] = useState<{liquid: number, gross: number}[]>([]);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("salary_mappings");
+      if (saved) setSalaryMappings(JSON.parse(saved));
+    } catch(e) {}
+  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [companyFilter, setCompanyFilter] = useState<'TODOS' | 'BUDDY' | 'CASANA'>('TODOS');
   const [sortBy, setSortBy] = useState<'number' | 'name'>('number');
@@ -92,7 +99,7 @@ export default function RelatoriosPage() {
     });
   }, [reportData, searchTerm, companyFilter, sortBy]);
 
-  const exportExcel = async () => {
+    const exportExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Fechamento");
 
@@ -101,15 +108,17 @@ export default function RelatoriosPage() {
       { header: "", key: "n", width: 5 },
       { header: "", key: "name", width: 40 },
       { header: "", key: "role", width: 20 },
-      { header: "", key: "vr", width: 10 },
-      { header: "", key: "bruto", width: 15 },
-      { header: "", key: "liquido", width: 15 },
-      { header: "", key: "pago", width: 15 },
+      { header: "", key: "vr", width: 8 },
+      { header: "", key: "liq_contratual", width: 16 },
+      { header: "", key: "liq_pago", width: 16 },
+      { header: "", key: "bruto", width: 16 },
     ];
     
     days.forEach(date => {
       columns.push({ header: "", key: `day_${date.getDate()}`, width: 5.5 });
     });
+
+    columns.push({ header: "", key: "faltas", width: 12 });
     
     worksheet.columns = columns as any;
 
@@ -138,6 +147,12 @@ export default function RelatoriosPage() {
       };
     });
 
+    const faltasHeader1 = headerRow1.getCell(days.length + 8);
+    faltasHeader1.value = "TOTAL";
+    faltasHeader1.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Calibri' };
+    faltasHeader1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
+    faltasHeader1.alignment = { horizontal: 'center', vertical: 'middle' };
+
     // Row 2: Headers (Day of week)
     const headerRow2 = worksheet.getRow(2);
     headerRow2.height = 20;
@@ -157,12 +172,12 @@ export default function RelatoriosPage() {
     [
       { cell: headerRow2.getCell(3), label: "Cargo" },
       { cell: headerRow2.getCell(4), label: "VR" },
-      { cell: headerRow2.getCell(5), label: "Bruto Mês" },
-      { cell: headerRow2.getCell(6), label: "Líquido Mês" },
-      { cell: headerRow2.getCell(7), label: "Pago Mês" }
+      { cell: headerRow2.getCell(5), label: "Líquido Contratual" },
+      { cell: headerRow2.getCell(6), label: "Líquido Pago Mês" },
+      { cell: headerRow2.getCell(7), label: "Salário Bruto" }
     ].forEach(({ cell, label }) => {
       cell.value = label;
-      cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Calibri' };
+      cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 9, name: 'Calibri' };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
     });
@@ -181,23 +196,36 @@ export default function RelatoriosPage() {
       };
     });
 
+    const faltasHeader2 = headerRow2.getCell(days.length + 8);
+    faltasHeader2.value = "Faltas";
+    faltasHeader2.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 9, name: 'Calibri' };
+    faltasHeader2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
+    faltasHeader2.alignment = { horizontal: 'center', vertical: 'middle' };
+
     // Rows Data
     let rowIdx = 1;
     filteredData.forEach((emp) => {
+      const liquidoContratual = emp.salary || 0;
+      const mapping = salaryMappings.find(m => Math.abs(m.liquid - liquidoContratual) < 0.01);
+      const salarioBruto = mapping ? mapping.gross : liquidoContratual * 1.084;
+      
       const empPayments = payments.filter(p => p.employee_id === emp.id && p.period_month === month + 1 && p.period_year === year);
-      const brutoMes = empPayments.reduce((acc, p) => acc + p.gross_amount, 0);
-      const liquidoMes = empPayments.reduce((acc, p) => acc + p.net_amount, 0);
-      const pagoMes = empPayments.filter(p => p.paid).reduce((acc, p) => acc + p.net_amount, 0);
+      const liquidoPagoMes = empPayments.filter(p => p.paid).reduce((acc, p) => acc + p.net_amount, 0);
 
       const empNum = emp.employee_number != null && String(emp.employee_number).trim() !== "" ? emp.employee_number : rowIdx++;
+      
+      const totalFaltasCalc = emp.absences + (emp.half_presences * 0.5);
+      const faltasStr = totalFaltasCalc > 0 ? `${totalFaltasCalc.toString().replace('.', ',')} faltas` : "-";
+
       const row = worksheet.addRow({ 
         n: empNum, 
         name: emp.name,
         role: emp.role || "-",
         vr: emp.recebe_vr ? "Sim" : "Não",
-        bruto: brutoMes > 0 ? brutoMes : "-",
-        liquido: liquidoMes > 0 ? liquidoMes : "-",
-        pago: pagoMes > 0 ? pagoMes : "-"
+        liq_contratual: liquidoContratual > 0 ? liquidoContratual : "-",
+        liq_pago: liquidoPagoMes > 0 ? liquidoPagoMes : "-",
+        bruto: salarioBruto > 0 ? salarioBruto : "-",
+        faltas: faltasStr
       });
       row.height = 18;
 
@@ -214,18 +242,18 @@ export default function RelatoriosPage() {
       nameCellRow.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
       
       [3, 4, 5, 6, 7].forEach(idx => styleCell(row.getCell(idx)));
+      
       row.getCell(5).numFmt = '"R$ "#,##0.00';
       row.getCell(6).numFmt = '"R$ "#,##0.00';
       row.getCell(7).numFmt = '"R$ "#,##0.00';
-      
-      days.forEach((date, dateIndex) => {
+
+      days.forEach((date, index) => {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
         const record = attendance[dateStr]?.[emp.id];
         const status = typeof record === 'string' ? record : record?.status;
-        const obs = typeof record === 'object' ? record?.observation : null;
-        
         const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-        const cell = row.getCell(dateIndex + 3);
+        
+        const cell = row.getCell(index + 8);
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
         
         if (isWeekend) {
@@ -255,7 +283,7 @@ export default function RelatoriosPage() {
             cell.font = { color: { argb: 'FF385D22' }, name: 'Calibri', size: 10 };
           } else if (status === 'half_presence') {
             cell.value = 0.5;
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE699' } }; // yellow
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE699' } }; 
             cell.font = { color: { argb: 'FFC65911' }, name: 'Calibri', size: 10 };
           } else if (status === 'suspension') {
             cell.value = 'S';
@@ -264,23 +292,11 @@ export default function RelatoriosPage() {
           }
         }
       });
+      
+      const faltasCell = row.getCell(days.length + 8);
+      styleCell(faltasCell);
+      faltasCell.font = { bold: true, color: { argb: 'FFC00000' }, name: 'Calibri', size: 10 };
     });
-
-    const footerRow = worksheet.addRow({});
-    footerRow.height = 20;
-    worksheet.mergeCells(`A${footerRow.number}:G${footerRow.number}`);
-    const footerTitle = footerRow.getCell(1);
-    footerTitle.value = "TOTAL GERAL DE FALTAS (Não Justificadas)";
-    footerTitle.font = { bold: true, name: 'Calibri', size: 10 };
-    footerTitle.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-    
-    worksheet.mergeCells(`H${footerRow.number}:${footerRow.getCell(days.length + 7).address}`);
-    const footerValue = footerRow.getCell(8);
-    const totalFaltas = filteredData.reduce((acc, item) => acc + item.absences, 0);
-    const totalMeias = filteredData.reduce((acc, item) => acc + item.half_presences, 0);
-    footerValue.value = `${totalFaltas} Faltas inteiras e ${totalMeias} Meias-faltas`;
-    footerValue.font = { bold: true, color: { argb: 'FFC00000' }, name: 'Calibri', size: 10 };
-    footerValue.alignment = { vertical: 'middle', indent: 1 };
 
     const buffer = await workbook.xlsx.writeBuffer();
     saveAs(new Blob([buffer]), `relatorio_presenca_${monthStr}.xlsx`);
@@ -406,9 +422,9 @@ export default function RelatoriosPage() {
                     <TableHead className="sticky left-0 z-20 bg-slate-50 dark:bg-slate-900 min-w-[200px] border-r">Funcionário</TableHead>
                     <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[120px] border-r text-center">Cargo</TableHead>
                     <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[80px] border-r text-center">VR</TableHead>
-                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[100px] border-r text-center">Bruto Mês</TableHead>
-                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[100px] border-r text-center">Líquido Mês</TableHead>
-                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[100px] border-r text-center">Pago Mês</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[120px] border-r text-center">Líquido Contratual</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[120px] border-r text-center">Líquido Pago Mês</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[120px] border-r text-center">Salário Bruto</TableHead>
                     {days.map(date => (
                       <TableHead key={date.toISOString()} className="text-center w-12 border-r px-1 last:border-0">
                         <div className="flex flex-col items-center">
@@ -417,6 +433,7 @@ export default function RelatoriosPage() {
                         </div>
                       </TableHead>
                     ))}
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[80px] border-l text-center font-bold text-red-500">Faltas</TableHead>
                   </TableRow>
                 )}
               </TableHeader>
@@ -503,21 +520,18 @@ export default function RelatoriosPage() {
                               </TableCell>
                             );
                           })}
+                          <TableCell className="border-l text-center font-bold text-red-500 text-xs">
+                            {(() => {
+                              const totalF = item.absences + (item.half_presences * 0.5);
+                              return totalF > 0 ? `${totalF.toString().replace('.', ',')} faltas` : "—";
+                            })()}
+                          </TableCell>
                         </TableRow>
                       );
                     }
                   })
                 )}
-                {viewMode === 'espelho' && filteredData.length > 0 && (
-                  <TableRow className="bg-slate-100 dark:bg-slate-800 font-bold hover:bg-slate-100 dark:hover:bg-slate-800">
-                    <TableCell colSpan={6} className="sticky left-0 z-20 bg-slate-100 dark:bg-slate-800 text-right border-r px-4 py-3">
-                      TOTAL GERAL DE FALTAS (Não Justificadas)
-                    </TableCell>
-                    <TableCell colSpan={days.length} className="text-left px-4 text-red-600 dark:text-red-400">
-                      {filteredData.reduce((acc, item) => acc + item.absences, 0)} Faltas inteiras e {filteredData.reduce((acc, item) => acc + item.half_presences, 0)} Meias-faltas
-                    </TableCell>
-                  </TableRow>
-                )}
+                
               </TableBody>
             </Table>
           </div>

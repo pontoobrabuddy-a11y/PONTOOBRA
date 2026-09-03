@@ -1147,7 +1147,7 @@ ${signature}`;
                  {/* Salário / Diária */}
                  <div className="grid grid-cols-4 items-center gap-4">
                    <Label className="text-right text-sm">
-                     {formData.employment_type === "Avulso" ? "Diária (R$)" : "Salário (R$)"}
+                     {formData.employment_type === "Avulso" ? "Diária (R$)" : "Salário Líquido (R$)"}
                    </Label>
                    <Input
                      type="number"
@@ -1200,7 +1200,7 @@ ${signature}`;
                          onChange={(e) => setFormData({ ...formData, salary_family: e.target.checked })}
                        />
                        <Label htmlFor="salary_family" className="text-sm cursor-pointer">
-                         Recebe Salário Família (somente ajudantes)
+                         Recebe Salário Família
                        </Label>
                      </div>
                    </div>

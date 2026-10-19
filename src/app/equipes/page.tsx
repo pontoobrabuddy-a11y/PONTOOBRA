@@ -142,6 +142,22 @@ export default function EquipesPage() {
     return employees.filter((e) => e.status === "ativo");
   }, [employees]);
 
+  // Listas estruturadas de Encarregados e Engenheiros a partir dos funcionários cadastrados
+  const encarregadosList = useMemo(() => {
+    const isEncarregado = (r: string) => {
+      const lower = (r || "").toLowerCase();
+      return lower.includes("encarr") || lower.includes("mestre") || lower.includes("líder") || lower.includes("lider");
+    };
+    const prioritarios = activeEmployees.filter((e) => isEncarregado(e.role));
+    const outros = activeEmployees.filter((e) => !isEncarregado(e.role));
+    return { prioritarios, outros };
+  }, [activeEmployees]);
+
+  const engenheirosList = useMemo(() => {
+    const isEng = (r: string) => (r || "").toLowerCase().includes("eng");
+    return activeEmployees.filter((e) => isEng(e.role));
+  }, [activeEmployees]);
+
   // Suggested Engineers and Supervisors from active employees & previous teams
   const engineerSuggestions = useMemo(() => {
     const list = new Set<string>();
@@ -1497,58 +1513,104 @@ export default function EquipesPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Engenheiro Responsável */}
+                {/* Engenheiro Responsável (Select) */}
                 <div className="space-y-1">
-                  <Label htmlFor="engName" className="text-[11px] font-medium text-muted-foreground">
+                  <Label htmlFor="engSelect" className="text-[11px] font-medium text-muted-foreground">
                     Engenheiro Responsável
                   </Label>
-                  <Input
-                    id="engName"
+                  <select
+                    id="engSelect"
                     value={engineerName}
                     onChange={(e) => setEngineerName(e.target.value)}
-                    placeholder="Ex: Engenheiro 01 ou Eng. Carlos"
-                    className="h-8 text-xs"
-                  />
-                  {engineerSuggestions.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {engineerSuggestions.slice(0, 3).map((eng) => (
-                        <span
-                          key={eng}
-                          onClick={() => setEngineerName(eng)}
-                          className="text-[10px] bg-background hover:bg-primary/10 border px-1.5 py-0.5 rounded cursor-pointer text-muted-foreground hover:text-foreground"
-                        >
-                          {eng}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                    className="w-full h-8 px-2.5 rounded-md border border-input bg-background text-xs font-medium focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+                  >
+                    <option value="">Selecione o Engenheiro...</option>
+                    {engenheirosList.length > 0 && (
+                      <optgroup label="Engenheiros Cadastrados">
+                        {engenheirosList.map((emp) => {
+                          const label = emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name;
+                          return (
+                            <option key={emp.id} value={label}>
+                              {label} — {emp.role}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    )}
+                    <optgroup label="Padrão / Frentes">
+                      <option value="Engenheiro 01">Engenheiro 01</option>
+                      <option value="Engenheiro 02">Engenheiro 02</option>
+                      <option value="Engenheiro 03">Engenheiro 03</option>
+                    </optgroup>
+                    <optgroup label="Outros Funcionários">
+                      {activeEmployees
+                        .filter((e) => !(e.role || "").toLowerCase().includes("eng"))
+                        .map((emp) => {
+                          const label = emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name;
+                          return (
+                            <option key={emp.id} value={label}>
+                              {label} — {emp.role}
+                            </option>
+                          );
+                        })}
+                    </optgroup>
+                    {engineerName &&
+                      !["Engenheiro 01", "Engenheiro 02", "Engenheiro 03"].includes(engineerName) &&
+                      !activeEmployees.some(
+                        (e) => (e.nickname ? `${e.name} (${e.nickname})` : e.name) === engineerName || e.name === engineerName
+                      ) && (
+                        <option value={engineerName}>{engineerName} (Personalizado)</option>
+                      )}
+                  </select>
                 </div>
 
-                {/* Encarregado / Mestre Responsável */}
+                {/* Encarregado / Mestre Responsável (Select) */}
                 <div className="space-y-1">
-                  <Label htmlFor="supName" className="text-[11px] font-medium text-muted-foreground">
+                  <Label htmlFor="supSelect" className="text-[11px] font-medium text-muted-foreground">
                     Encarregado / Mestre Responsável
                   </Label>
-                  <Input
-                    id="supName"
+                  <select
+                    id="supSelect"
                     value={supervisorName}
                     onChange={(e) => setSupervisorName(e.target.value)}
-                    placeholder="Ex: Encarregado 01 ou Mestre João"
-                    className="h-8 text-xs"
-                  />
-                  {supervisorSuggestions.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {supervisorSuggestions.slice(0, 3).map((sup) => (
-                        <span
-                          key={sup}
-                          onClick={() => setSupervisorName(sup)}
-                          className="text-[10px] bg-background hover:bg-primary/10 border px-1.5 py-0.5 rounded cursor-pointer text-muted-foreground hover:text-foreground"
-                        >
-                          {sup}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                    className="w-full h-8 px-2.5 rounded-md border border-input bg-background text-xs font-medium focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+                  >
+                    <option value="">Selecione o Encarregado...</option>
+                    {encarregadosList.prioritarios.length > 0 && (
+                      <optgroup label="Encarregados & Mestres">
+                        {encarregadosList.prioritarios.map((emp) => {
+                          const label = emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name;
+                          return (
+                            <option key={emp.id} value={label}>
+                              {label} — {emp.role}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    )}
+                    <optgroup label="Padrão / Frentes">
+                      <option value="Encarregado 01">Encarregado 01</option>
+                      <option value="Encarregado 02">Encarregado 02</option>
+                      <option value="Encarregado 03">Encarregado 03</option>
+                    </optgroup>
+                    <optgroup label="Todos os Funcionários">
+                      {encarregadosList.outros.map((emp) => {
+                        const label = emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name;
+                        return (
+                          <option key={emp.id} value={label}>
+                            {label} — {emp.role}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                    {supervisorName &&
+                      !["Encarregado 01", "Encarregado 02", "Encarregado 03"].includes(supervisorName) &&
+                      !activeEmployees.some(
+                        (e) => (e.nickname ? `${e.name} (${e.nickname})` : e.name) === supervisorName || e.name === supervisorName
+                      ) && (
+                        <option value={supervisorName}>{supervisorName} (Personalizado)</option>
+                      )}
+                  </select>
                 </div>
               </div>
 

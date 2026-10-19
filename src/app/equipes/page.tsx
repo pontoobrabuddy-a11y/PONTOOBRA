@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 import {
   Users,
   Plus,
@@ -26,7 +28,10 @@ import {
   Calendar,
   Share2,
   HardHat,
-  Briefcase
+  Briefcase,
+  LayoutGrid,
+  List,
+  FileSpreadsheet
 } from "lucide-react";
 
 const TASK_PRESETS = [
@@ -85,6 +90,21 @@ export default function EquipesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  // View Mode: Cards vs Lista
+  const [viewMode, setViewMode] = useState<"cards" | "lista">(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("ponto_teams_view_mode") as "cards" | "lista") || "cards";
+    }
+    return "cards";
+  });
+
+  const changeViewMode = (mode: "cards" | "lista") => {
+    setViewMode(mode);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("ponto_teams_view_mode", mode);
+    }
+  };
 
   // Dialog State
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -300,7 +320,7 @@ export default function EquipesPage() {
     let text = `📋 *ESCALA DE EQUIPES & TAREFAS - ${formattedDate}*\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-    teams.forEach((team, idx) => {
+    teams.forEach((team) => {
       const memberNames = team.employee_ids
         .map((id) => {
           const emp = employees.find((e) => e.id === id);
@@ -332,6 +352,174 @@ export default function EquipesPage() {
       setCopiedFeedback(true);
       setTimeout(() => setCopiedFeedback(false), 3000);
     });
+  };
+
+  const handleExportExcel = async () => {
+    if (teams.length === 0) {
+      alert("Nenhuma equipe cadastrada nesta data para exportar.");
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Escala de Equipes");
+
+    // Configuração de Colunas
+    worksheet.columns = [
+      { key: "num", width: 6 },
+      { key: "status", width: 16 },
+      { key: "team", width: 28 },
+      { key: "members", width: 36 },
+      { key: "roles", width: 26 },
+      { key: "presence", width: 22 },
+      { key: "task", width: 38 },
+      { key: "location", width: 26 },
+      { key: "notes", width: 26 },
+    ];
+
+    // Linha 1: Título Principal
+    const titleRow = worksheet.addRow(["RELATÓRIO DIÁRIO DE EQUIPES & TAREFAS"]);
+    worksheet.mergeCells("A1:I1");
+    titleRow.font = { name: "Arial", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+    titleRow.alignment = { horizontal: "center", vertical: "middle" };
+    titleRow.height = 32;
+    titleRow.getCell(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF0F172A" }, // Slate-900
+    };
+
+    // Linha 2: Subtítulo com Data
+    const [y, m, d] = date.split("-");
+    const formattedDate = `${d}/${m}/${y}`;
+    const nowTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const subRow = worksheet.addRow([
+      `Data da Escala: ${formattedDate} (${formattedDateTitle})  |  Gerado em: ${new Date().toLocaleDateString("pt-BR")} às ${nowTime}`,
+    ]);
+    worksheet.mergeCells("A2:I2");
+    subRow.font = { name: "Arial", size: 10, italic: true, color: { argb: "FF475569" } };
+    subRow.alignment = { horizontal: "center", vertical: "middle" };
+    subRow.height = 20;
+
+    // Linha 3: Resumo KPIs
+    const kpiRow = worksheet.addRow([
+      `Resumo Geral:  ${totalTeams} equipe(s) formadas  |  ${totalAllocated} trabalhador(es) alocados  |  ${completedCount} tarefa(s) concluídas  |  ${pendingOrProgressCount} em andamento / pendentes`,
+    ]);
+    worksheet.mergeCells("A3:I3");
+    kpiRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FF1E293B" } };
+    kpiRow.alignment = { horizontal: "center", vertical: "middle" };
+    kpiRow.height = 22;
+    kpiRow.getCell(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFF1F5F9" }, // Slate-100
+    };
+
+    worksheet.addRow([]); // Espaço em branco
+
+    // Linha 5: Cabeçalho das Colunas
+    const headerRow = worksheet.addRow([
+      "Nº",
+      "Status",
+      "Nome da Equipe",
+      "Integrantes",
+      "Cargos / Funções",
+      "Presença Ponto",
+      "Tarefa do Dia",
+      "Frente / Local",
+      "Observações",
+    ]);
+    headerRow.height = 25;
+    headerRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.alignment = { horizontal: "center", vertical: "middle" };
+
+    for (let c = 1; c <= 9; c++) {
+      const cell = headerRow.getCell(c);
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF334155" }, // Slate-700
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FF94A3B8" } },
+        bottom: { style: "medium", color: { argb: "FF0F172A" } },
+        left: { style: "thin", color: { argb: "FF94A3B8" } },
+        right: { style: "thin", color: { argb: "FF94A3B8" } },
+      };
+    }
+
+    // Linhas de Dados
+    filteredTeams.forEach((team, index) => {
+      const memberNames: string[] = [];
+      const memberRoles: string[] = [];
+      const memberPresence: string[] = [];
+
+      team.employee_ids.forEach((id) => {
+        const emp = employees.find((e) => e.id === id);
+        if (emp) {
+          memberNames.push(emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name);
+          memberRoles.push(emp.role);
+          const att = getEmpAttendanceInfo(emp.id);
+          memberPresence.push(att.label);
+        }
+      });
+
+      const statusLabel =
+        team.status === "concluida"
+          ? "Concluída"
+          : team.status === "pendente"
+          ? "Pendente"
+          : "Em Andamento";
+
+      const row = worksheet.addRow([
+        index + 1,
+        statusLabel,
+        team.name,
+        memberNames.join("\n"),
+        memberRoles.join("\n"),
+        memberPresence.join("\n"),
+        team.task_description,
+        team.location || "-",
+        team.notes || "-",
+      ]);
+
+      row.alignment = { vertical: "middle", wrapText: true };
+      row.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
+      row.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
+
+      // Cor no status
+      if (team.status === "concluida") {
+        row.getCell(2).font = { color: { argb: "FF059669" }, bold: true };
+      } else if (team.status === "pendente") {
+        row.getCell(2).font = { color: { argb: "FFD97706" }, bold: true };
+      } else {
+        row.getCell(2).font = { color: { argb: "FF2563EB" }, bold: true };
+      }
+
+      // Fundo zebrado
+      const bg = index % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC";
+      for (let c = 1; c <= 9; c++) {
+        const cell = row.getCell(c);
+        if (!cell.fill) {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: bg },
+          };
+        }
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+      }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    saveAs(blob, `Escala_Equipes_${date}.xlsx`);
   };
 
   const handlePrint = () => {
@@ -416,7 +604,47 @@ export default function EquipesPage() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* View Mode Toggle */}
+          <div className="flex items-center border rounded-lg p-0.5 bg-muted/40 mr-1">
+            <button
+              type="button"
+              onClick={() => changeViewMode("cards")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                viewMode === "cards"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              title="Visualização em Cards"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Cards</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => changeViewMode("lista")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                viewMode === "lista"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              title="Visualização em Lista / Tabela"
+            >
+              <List className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Lista</span>
+            </button>
+          </div>
+
+          <Button
+            variant="outline"
+            onClick={handleExportExcel}
+            className="gap-2 text-xs md:text-sm text-emerald-700 hover:text-emerald-800 border-emerald-200 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800"
+            title="Exportar dados para planilha Excel (.xlsx)"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+            Exportar Excel
+          </Button>
+
           <Button
             variant="outline"
             onClick={handleCopyToWhatsApp}
@@ -436,6 +664,7 @@ export default function EquipesPage() {
               </>
             )}
           </Button>
+
           <Button
             variant="outline"
             onClick={handlePrint}
@@ -561,7 +790,8 @@ export default function EquipesPage() {
                 </Button>
               </div>
             </Card>
-          ) : (
+          ) : viewMode === "cards" ? (
+            /* CARDS VIEW */
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredTeams.map((team) => {
                 const config = statusStyles[team.status] || statusStyles.em_andamento;
@@ -695,6 +925,138 @@ export default function EquipesPage() {
                 );
               })}
             </div>
+          ) : (
+            /* LISTA / TABELA VIEW */
+            <Card className="shadow-xs overflow-hidden border">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-muted/70 border-b text-muted-foreground font-semibold">
+                      <th className="py-3 px-3 w-28">Status</th>
+                      <th className="py-3 px-3 w-48">Equipe</th>
+                      <th className="py-3 px-3 min-w-[220px]">Integrantes & Funções</th>
+                      <th className="py-3 px-3 min-w-[200px]">Tarefa do Dia</th>
+                      <th className="py-3 px-3 w-36">Local / Frente</th>
+                      <th className="py-3 px-3 w-24 text-right print:hidden">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {filteredTeams.map((team) => {
+                      const config = statusStyles[team.status] || statusStyles.em_andamento;
+
+                      return (
+                        <tr
+                          key={team.id}
+                          className="hover:bg-muted/30 transition-colors align-top"
+                        >
+                          {/* Status */}
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <button
+                              onClick={() => toggleTeamStatus(team.id)}
+                              title="Clique para alternar status"
+                              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border transition-all cursor-pointer ${config.badge}`}
+                            >
+                              {config.label}
+                            </button>
+                          </td>
+
+                          {/* Team Name */}
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-foreground text-sm flex items-center gap-1.5">
+                              {team.name}
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">
+                              {team.employee_ids.length} trabalhador{team.employee_ids.length !== 1 ? "es" : ""}
+                            </span>
+                          </td>
+
+                          {/* Integrantes */}
+                          <td className="py-3 px-3">
+                            <div className="flex flex-col gap-1">
+                              {team.employee_ids.map((id) => {
+                                const emp = employees.find((e) => e.id === id);
+                                if (!emp) return null;
+                                const att = getEmpAttendanceInfo(emp.id);
+
+                                return (
+                                  <div
+                                    key={id}
+                                    className="inline-flex items-center justify-between gap-2 p-1 rounded bg-background border text-[11px]"
+                                  >
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <span className="font-semibold text-foreground">
+                                        {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name}
+                                      </span>
+                                      <span className="text-muted-foreground text-[10px]">
+                                        • {emp.role}
+                                      </span>
+                                    </div>
+                                    <span
+                                      className={`text-[9px] font-medium px-1.5 py-0.2 rounded shrink-0 ${att.color}`}
+                                      title={`Ponto: ${att.label}`}
+                                    >
+                                      {att.label}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+
+                          {/* Tarefa */}
+                          <td className="py-3 px-3">
+                            <div className="font-medium text-foreground">
+                              {team.task_description || "-"}
+                            </div>
+                            {team.notes && (
+                              <p className="text-[10px] text-muted-foreground italic mt-0.5">
+                                Obs: {team.notes}
+                              </p>
+                            )}
+                          </td>
+
+                          {/* Local */}
+                          <td className="py-3 px-3 text-muted-foreground">
+                            {team.location ? (
+                              <div className="flex items-center gap-1 font-medium text-foreground">
+                                <MapPin className="h-3 w-3 text-primary shrink-0" />
+                                <span>{team.location}</span>
+                              </div>
+                            ) : (
+                              <span>-</span>
+                            )}
+                          </td>
+
+                          {/* Ações */}
+                          <td className="py-3 px-3 text-right whitespace-nowrap print:hidden">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenEditDialog(team)}
+                                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                title="Editar"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(team.id, team.name)}
+                                className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                title="Excluir"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           )}
         </div>
 

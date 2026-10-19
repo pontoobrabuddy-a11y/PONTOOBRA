@@ -22,13 +22,19 @@ export interface DailyTeam {
 
 interface DailyTeamsState {
   teams: DailyTeam[];
+  historyTeams: DailyTeam[];
   isLoading: boolean;
+  isLoadingHistory: boolean;
   error: string | null;
   fetchTeamsForDate: (date: string) => Promise<DailyTeam[]>;
+  fetchAllHistoryTeams: () => Promise<DailyTeam[]>;
+  fetchPreviewTeamsForDate: (sourceDate: string) => Promise<DailyTeam[]>;
+  findLastDateWithTeams: (beforeDate: string) => Promise<{ date: string; teams: DailyTeam[] } | null>;
   createTeam: (team: Omit<DailyTeam, 'id' | 'created_at' | 'updated_at'>) => Promise<DailyTeam>;
   updateTeam: (id: string, updates: Partial<DailyTeam>) => Promise<void>;
   deleteTeam: (id: string) => Promise<void>;
   cloneTeamsFromDate: (sourceDate: string, targetDate: string) => Promise<number>;
+  cloneSelectedTeams: (sourceTeams: DailyTeam[], targetDate: string) => Promise<number>;
   toggleTeamStatus: (id: string) => Promise<void>;
   toggleTeamHidden: (id: string) => Promise<void>;
 }
@@ -54,9 +60,28 @@ const saveLocalTeams = (teams: DailyTeam[]) => {
   }
 };
 
+const mapRowToDailyTeam = (row: any): DailyTeam => ({
+  id: row.id,
+  date: row.date,
+  name: row.name,
+  employee_ids: Array.isArray(row.employee_ids) ? row.employee_ids : [],
+  task_description: row.task_description || '',
+  location: row.location || '',
+  status: (row.status as DailyTeamStatus) || 'em_andamento',
+  notes: row.notes || '',
+  is_hidden: Boolean(row.is_hidden),
+  engineer_name: row.engineer_name || '',
+  supervisor_name: row.supervisor_name || '',
+  parent_team_id: row.parent_team_id || '',
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
 export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
   teams: [],
+  historyTeams: [],
   isLoading: false,
+  isLoadingHistory: false,
   error: null,
 
   fetchTeamsForDate: async (date: string) => {
@@ -76,28 +101,12 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
         .order('created_at', { ascending: true });
 
       if (error) {
-        // Table might not exist yet in Supabase or connection issue; fallback to local
         console.warn('daily_teams Supabase aviso/fallback:', error.message);
         set({ teams: currentCached, isLoading: false });
         return currentCached;
       }
 
-      const formatted: DailyTeam[] = (data || []).map((row: any) => ({
-        id: row.id,
-        date: row.date,
-        name: row.name,
-        employee_ids: Array.isArray(row.employee_ids) ? row.employee_ids : [],
-        task_description: row.task_description || '',
-        location: row.location || '',
-        status: (row.status as DailyTeamStatus) || 'em_andamento',
-        notes: row.notes || '',
-        is_hidden: Boolean(row.is_hidden),
-        engineer_name: row.engineer_name || '',
-        supervisor_name: row.supervisor_name || '',
-        parent_team_id: row.parent_team_id || '',
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }));
+      const formatted: DailyTeam[] = (data || []).map(mapRowToDailyTeam);
 
       // Merge into local storage for this date
       const others = localTeams.filter(t => t.date !== date);
@@ -110,6 +119,97 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
       set({ teams: currentCached, isLoading: false });
       return currentCached;
     }
+  },
+
+  fetchAllHistoryTeams: async () => {
+    set({ isLoadingHistory: true });
+    const localTeams = getLocalTeams();
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('daily_teams')
+        .select('*')
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: true });
+
+      if (!error && data) {
+        const remoteTeams = data.map(mapRowToDailyTeam);
+        // Merge remote with any local-only teams
+        const remoteIds = new Set(remoteTeams.map(t => t.id));
+        const localOnly = localTeams.filter(t => !remoteIds.has(t.id));
+        const merged = [...remoteTeams, ...localOnly].sort((a, b) => b.date.localeCompare(a.date));
+        saveLocalTeams(merged);
+        set({ historyTeams: merged, isLoadingHistory: false });
+        return merged;
+      }
+    } catch (err) {
+      console.warn('Fallback local para histórico de equipes:', err);
+    }
+
+    const sortedLocal = [...localTeams].sort((a, b) => b.date.localeCompare(a.date));
+    set({ historyTeams: sortedLocal, isLoadingHistory: false });
+    return sortedLocal;
+  },
+
+  fetchPreviewTeamsForDate: async (sourceDate: string) => {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('daily_teams')
+        .select('*')
+        .eq('date', sourceDate)
+        .order('created_at', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        return data.map(mapRowToDailyTeam);
+      }
+    } catch {
+      // fallback
+    }
+    const localTeams = getLocalTeams();
+    return localTeams.filter(t => t.date === sourceDate);
+  },
+
+  findLastDateWithTeams: async (beforeDate: string) => {
+    try {
+      const supabase = createClient();
+      // Find the latest date strictly before `beforeDate`
+      const { data: latestRow, error } = await supabase
+        .from('daily_teams')
+        .select('date')
+        .lt('date', beforeDate)
+        .order('date', { ascending: false })
+        .limit(1);
+
+      if (!error && latestRow && latestRow.length > 0) {
+        const lastDate = latestRow[0].date;
+        const { data: teamsData } = await supabase
+          .from('daily_teams')
+          .select('*')
+          .eq('date', lastDate)
+          .order('created_at', { ascending: true });
+
+        if (teamsData && teamsData.length > 0) {
+          return {
+            date: lastDate,
+            teams: teamsData.map(mapRowToDailyTeam),
+          };
+        }
+      }
+    } catch {
+      // fallback to local storage
+    }
+
+    const localTeams = getLocalTeams().filter(t => t.date < beforeDate);
+    if (localTeams.length === 0) return null;
+
+    const dates = Array.from(new Set(localTeams.map(t => t.date))).sort().reverse();
+    const lastDate = dates[0];
+    return {
+      date: lastDate,
+      teams: localTeams.filter(t => t.date === lastDate),
+    };
   },
 
   createTeam: async (teamData) => {
@@ -157,22 +257,7 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
         .single();
 
       if (!error && data) {
-        const syncedTeam: DailyTeam = {
-          id: data.id,
-          date: data.date,
-          name: data.name,
-          employee_ids: Array.isArray(data.employee_ids) ? data.employee_ids : [],
-          task_description: data.task_description || '',
-          location: data.location || '',
-          status: (data.status as DailyTeamStatus) || 'em_andamento',
-          notes: data.notes || '',
-          is_hidden: Boolean(data.is_hidden),
-          engineer_name: data.engineer_name || '',
-          supervisor_name: data.supervisor_name || '',
-          parent_team_id: data.parent_team_id || '',
-          created_at: data.created_at,
-          updated_at: data.updated_at,
-        };
+        const syncedTeam = mapRowToDailyTeam(data);
         const syncedList = get().teams.map(t => t.id === tempId ? syncedTeam : t);
         set({ teams: syncedList });
         const currentAll = getLocalTeams().map(t => t.id === tempId ? syncedTeam : t);
@@ -190,7 +275,8 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
     const current = get().teams;
     const now = new Date().toISOString();
     const updated = current.map(t => t.id === id ? { ...t, ...updates, updated_at: now } : t);
-    set({ teams: updated });
+    const updatedHistory = get().historyTeams.map(t => t.id === id ? { ...t, ...updates, updated_at: now } : t);
+    set({ teams: updated, historyTeams: updatedHistory });
 
     const allLocal = getLocalTeams();
     saveLocalTeams(allLocal.map(t => t.id === id ? { ...t, ...updates, updated_at: now } : t));
@@ -217,7 +303,11 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
 
   deleteTeam: async (id: string) => {
     const current = get().teams;
-    set({ teams: current.filter(t => t.id !== id) });
+    const currentHistory = get().historyTeams;
+    set({
+      teams: current.filter(t => t.id !== id),
+      historyTeams: currentHistory.filter(t => t.id !== id),
+    });
 
     const allLocal = getLocalTeams();
     saveLocalTeams(allLocal.filter(t => t.id !== id));
@@ -231,39 +321,12 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
   },
 
   cloneTeamsFromDate: async (sourceDate: string, targetDate: string) => {
-    let sourceTeams: DailyTeam[] = [];
-    try {
-      const supabase = createClient();
-      const { data } = await supabase.from('daily_teams').select('*').eq('date', sourceDate);
-      if (data && data.length > 0) {
-        sourceTeams = data.map((r: any) => ({
-          id: r.id,
-          date: r.date,
-          name: r.name,
-          employee_ids: Array.isArray(r.employee_ids) ? r.employee_ids : [],
-          task_description: r.task_description || '',
-          location: r.location || '',
-          status: 'em_andamento' as DailyTeamStatus,
-          notes: r.notes || '',
-          is_hidden: Boolean(r.is_hidden),
-          engineer_name: r.engineer_name || '',
-          supervisor_name: r.supervisor_name || '',
-          parent_team_id: r.parent_team_id || '',
-        }));
-      }
-    } catch {
-      // fallback to local
-    }
+    const sourceTeams = await get().fetchPreviewTeamsForDate(sourceDate);
+    if (sourceTeams.length === 0) return 0;
+    return await get().cloneSelectedTeams(sourceTeams, targetDate);
+  },
 
-    if (sourceTeams.length === 0) {
-      const allLocal = getLocalTeams();
-      sourceTeams = allLocal.filter(t => t.date === sourceDate);
-    }
-
-    if (sourceTeams.length === 0) {
-      return 0;
-    }
-
+  cloneSelectedTeams: async (sourceTeams: DailyTeam[], targetDate: string) => {
     let clonedCount = 0;
     for (const st of sourceTeams) {
       await get().createTeam({
@@ -281,7 +344,6 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
       });
       clonedCount++;
     }
-
     return clonedCount;
   },
 

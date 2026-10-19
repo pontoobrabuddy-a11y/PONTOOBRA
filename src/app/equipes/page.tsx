@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useStore, Employee, Status, AttendanceRecord } from "@/store/useStore";
+import { useStore, Employee, Status } from "@/store/useStore";
 import { useDailyTeams, DailyTeam, DailyTeamStatus } from "@/store/useDailyTeams";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,6 @@ import { saveAs } from "file-saver";
 import {
   Users,
   Plus,
-  Copy,
   Printer,
   RotateCcw,
   CheckCircle2,
@@ -35,8 +34,12 @@ import {
   Eye,
   EyeOff,
   GitFork,
-  Layers,
-  Network
+  Network,
+  History,
+  ArrowLeftRight,
+  AlertTriangle,
+  UserX,
+  UserPlus
 } from "lucide-react";
 
 const TASK_PRESETS = [
@@ -79,16 +82,39 @@ const getLocalDateString = (offsetDays = 0): string => {
   return d.toISOString().split("T")[0];
 };
 
+const formatBrDate = (dateStr: string): string => {
+  if (!dateStr) return "-";
+  const [y, m, d] = dateStr.split("-");
+  return `${d}/${m}/${y}`;
+};
+
+const formatBrDateFull = (dateStr: string): string => {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const d = new Date(year, month - 1, day);
+  return d.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+};
+
 export default function EquipesPage() {
   const { employees, attendance } = useStore();
   const {
     teams,
+    historyTeams,
     isLoading,
+    isLoadingHistory,
     fetchTeamsForDate,
+    fetchAllHistoryTeams,
+    fetchPreviewTeamsForDate,
+    findLastDateWithTeams,
     createTeam,
     updateTeam,
     deleteTeam,
-    cloneTeamsFromDate,
+    cloneSelectedTeams,
     toggleTeamStatus,
     toggleTeamHidden,
   } = useDailyTeams();
@@ -116,7 +142,7 @@ export default function EquipesPage() {
     }
   };
 
-  // Dialog State
+  // Create / Edit Team Dialog State
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
@@ -131,6 +157,29 @@ export default function EquipesPage() {
   const [supervisorName, setSupervisorName] = useState("");
   const [parentTeamId, setParentTeamId] = useState("");
   const [empModalSearch, setEmpModalSearch] = useState("");
+
+  // Smart Clone Dialog State (Item 6)
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [cloneSourceDate, setCloneSourceDate] = useState<string>("");
+  const [lastDetectedDate, setLastDetectedDate] = useState<string | null>(null);
+  const [clonePreviewTeams, setClonePreviewTeams] = useState<DailyTeam[]>([]);
+  const [selectedCloneIds, setSelectedCloneIds] = useState<string[]>([]);
+  const [isCloning, setIsCloning] = useState(false);
+
+  // Quick Replace Absent Member Dialog State (Item 1)
+  const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
+  const [replaceTeam, setReplaceTeam] = useState<DailyTeam | null>(null);
+  const [replaceOldEmpId, setReplaceOldEmpId] = useState<string | null>(null);
+  const [replaceNewEmpId, setReplaceNewEmpId] = useState<string>("");
+  const [autoUpdateNameOnReplace, setAutoUpdateNameOnReplace] = useState<boolean>(true);
+
+  // History / Traceability Dialog State (Item 4)
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [histSearch, setHistSearch] = useState("");
+  const [histEmpId, setHistEmpId] = useState("TODOS");
+  const [histSupervisor, setHistSupervisor] = useState("TODOS");
+  const [histStartDate, setHistStartDate] = useState("");
+  const [histEndDate, setHistEndDate] = useState("");
 
   // Load teams when date changes
   useEffect(() => {
@@ -158,61 +207,48 @@ export default function EquipesPage() {
     return activeEmployees.filter((e) => isEng(e.role));
   }, [activeEmployees]);
 
-  // Suggested Engineers and Supervisors from active employees & previous teams
-  const engineerSuggestions = useMemo(() => {
-    const list = new Set<string>();
-    employees.forEach((e) => {
-      if (e.role && e.role.toLowerCase().includes("eng")) {
-        list.add(e.name);
-      }
-    });
-    teams.forEach((t) => {
-      if (t.engineer_name?.trim()) list.add(t.engineer_name.trim());
-    });
-    if (list.size === 0) {
-      list.add("Engenheiro 01");
-      list.add("Engenheiro 02");
-    }
-    return Array.from(list);
-  }, [employees, teams]);
-
-  const supervisorSuggestions = useMemo(() => {
-    const list = new Set<string>();
-    employees.forEach((e) => {
-      const r = (e.role || "").toLowerCase();
-      if (r.includes("encarr") || r.includes("mestre") || r.includes("líder") || r.includes("lider")) {
-        list.add(e.name);
-      }
-    });
-    teams.forEach((t) => {
-      if (t.supervisor_name?.trim()) list.add(t.supervisor_name.trim());
-    });
-    if (list.size === 0) {
-      list.add("Encarregado 01");
-      list.add("Encarregado 02");
-    }
-    return Array.from(list);
-  }, [employees, teams]);
-
   // Attendance for current selected date
   const todayAttendance = useMemo(() => {
     return attendance[date] || {};
   }, [attendance, date]);
 
-  // Helper to get attendance label and color
-  const getEmpAttendanceInfo = (empId: string) => {
-    const record = todayAttendance[empId];
+  // Helper to get attendance label, color and absence flag
+  const getEmpAttendanceInfo = (empId: string, targetDateStr?: string) => {
+    const attMap = targetDateStr ? attendance[targetDateStr] || {} : todayAttendance;
+    const record = attMap[empId];
     const status: Status = typeof record === "string" ? record : record?.status || null;
 
-    if (status === "presence") return { label: "Presente", color: "bg-emerald-500 text-white" };
-    if (status === "half_presence") return { label: "1/2 Presença", color: "bg-orange-500 text-white" };
-    if (status === "absence") return { label: "Falta", color: "bg-red-500 text-white" };
-    if (status === "justified_absence") return { label: "Justificada", color: "bg-yellow-500 text-white" };
-    if (status === "suspension") return { label: "Suspensão", color: "bg-slate-700 text-white" };
-    return { label: "Sem registro", color: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300" };
+    if (status === "presence")
+      return { label: "Presente", color: "bg-emerald-500 text-white", isAbsent: false, isPresent: true };
+    if (status === "half_presence")
+      return { label: "1/2 Presença", color: "bg-orange-500 text-white", isAbsent: false, isPresent: true };
+    if (status === "absence")
+      return { label: "Falta", color: "bg-red-500 text-white", isAbsent: true, isPresent: false };
+    if (status === "justified_absence")
+      return { label: "Justificada", color: "bg-yellow-500 text-white", isAbsent: true, isPresent: false };
+    if (status === "suspension")
+      return { label: "Suspensão", color: "bg-slate-700 text-white", isAbsent: true, isPresent: false };
+    return {
+      label: "Sem registro",
+      color: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+      isAbsent: false,
+      isPresent: false,
+    };
   };
 
-  // Employees already assigned to any team on this date (excluding hidden teams from count if hidden not shown)
+  // Helper to find absent members in a team on the selected date (Item 1)
+  const getTeamAbsentMembers = (team: DailyTeam) => {
+    return team.employee_ids
+      .map((id) => {
+        const emp = employees.find((e) => e.id === id);
+        if (!emp) return null;
+        const att = getEmpAttendanceInfo(id);
+        return att.isAbsent ? { emp, att } : null;
+      })
+      .filter(Boolean) as { emp: Employee; att: ReturnType<typeof getEmpAttendanceInfo> }[];
+  };
+
+  // Employees already assigned to any team on this date
   const assignedEmpIds = useMemo(() => {
     const ids = new Set<string>();
     teams.forEach((t) => {
@@ -226,6 +262,11 @@ export default function EquipesPage() {
     return activeEmployees.filter((e) => !assignedEmpIds.has(e.id));
   }, [activeEmployees, assignedEmpIds]);
 
+  // Teams with absent members (Desfalcadas)
+  const desfalcadasTeams = useMemo(() => {
+    return teams.filter((t) => (!t.is_hidden || showHidden) && getTeamAbsentMembers(t).length > 0);
+  }, [teams, showHidden, todayAttendance, employees]);
+
   // Metrics
   const totalTeams = teams.length;
   const hiddenTeamsCount = teams.filter((t) => t.is_hidden).length;
@@ -237,23 +278,23 @@ export default function EquipesPage() {
   // Filtered teams list
   const filteredTeams = useMemo(() => {
     return teams.filter((team) => {
-      // Ocultar equipes se showHidden for false
       if (!showHidden && team.is_hidden) return false;
 
-      if (statusFilter !== "todos" && team.status !== statusFilter) return false;
+      if (statusFilter === "desfalcadas") {
+        if (getTeamAbsentMembers(team).length === 0) return false;
+      } else if (statusFilter !== "todos" && team.status !== statusFilter) {
+        return false;
+      }
+
       if (!searchTerm) return true;
       const lower = searchTerm.toLowerCase();
 
-      // Match team name
       if (team.name.toLowerCase().includes(lower)) return true;
-      // Match task
       if (team.task_description.toLowerCase().includes(lower)) return true;
-      // Match location
       if (team.location?.toLowerCase().includes(lower)) return true;
-      // Match engineer or supervisor
       if (team.engineer_name?.toLowerCase().includes(lower)) return true;
       if (team.supervisor_name?.toLowerCase().includes(lower)) return true;
-      // Match member names
+
       const hasMember = team.employee_ids.some((id) => {
         const emp = employees.find((e) => e.id === id);
         return (
@@ -264,7 +305,7 @@ export default function EquipesPage() {
       });
       return hasMember;
     });
-  }, [teams, showHidden, statusFilter, searchTerm, employees]);
+  }, [teams, showHidden, statusFilter, searchTerm, employees, todayAttendance]);
 
   // Grouped by Hierarchy (Engenheiro ➔ Encarregado)
   const groupedHierarchy = useMemo(() => {
@@ -300,18 +341,7 @@ export default function EquipesPage() {
     return Object.values(groups);
   }, [filteredTeams]);
 
-  // Format Brazilian date string
-  const formattedDateTitle = useMemo(() => {
-    if (!date) return "";
-    const [year, month, day] = date.split("-").map(Number);
-    const d = new Date(year, month - 1, day);
-    return d.toLocaleDateString("pt-BR", {
-      weekday: "long",
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-    });
-  }, [date]);
+  const formattedDateTitle = useMemo(() => formatBrDateFull(date), [date]);
 
   // Auto-generate team name when selecting employees if not manually customized
   const handleToggleEmp = (empId: string) => {
@@ -328,7 +358,7 @@ export default function EquipesPage() {
       const names = newSelected
         .map((id) => {
           const emp = employees.find((e) => e.id === id);
-          return emp ? (emp.nickname || emp.name.split(" ")[0]) : "";
+          return emp ? emp.nickname || emp.name.split(" ")[0] : "";
         })
         .filter(Boolean);
       setTeamName(names.join(" - "));
@@ -351,7 +381,7 @@ export default function EquipesPage() {
     if (presetEmpId) {
       setSelectedEmpIds([presetEmpId]);
       const emp = employees.find((e) => e.id === presetEmpId);
-      setTeamName(emp ? (emp.nickname || emp.name.split(" ")[0]) : "");
+      setTeamName(emp ? emp.nickname || emp.name.split(" ")[0] : "");
     } else {
       setSelectedEmpIds([]);
       setTeamName("");
@@ -421,26 +451,269 @@ export default function EquipesPage() {
     }
   };
 
-  const handleCloneYesterday = async () => {
-    const yesterday = getLocalDateString(-1);
-    const count = await cloneTeamsFromDate(yesterday, date);
-    if (count > 0) {
-      setFeedbackMsg(`${count} equipe(s) clonada(s) do dia anterior!`);
-      setTimeout(() => setFeedbackMsg(null), 4000);
-    } else {
-      alert("Nenhuma equipe encontrada no dia anterior para clonar.");
-    }
+  // ============================================================================
+  // ITEM 1: Substituição / Remanejamento Rápido de Integrante com Falta
+  // ============================================================================
+  const handleOpenReplaceModal = (team: DailyTeam, absentEmpId: string) => {
+    setReplaceTeam(team);
+    setReplaceOldEmpId(absentEmpId);
+    setReplaceNewEmpId("");
+    setAutoUpdateNameOnReplace(true);
+    setReplaceDialogOpen(true);
   };
 
+  const handleConfirmReplace = async (onlyRemove = false) => {
+    if (!replaceTeam || !replaceOldEmpId) return;
+
+    let newEmpIds = replaceTeam.employee_ids.filter((id) => id !== replaceOldEmpId);
+    if (!onlyRemove && replaceNewEmpId) {
+      if (!newEmpIds.includes(replaceNewEmpId)) {
+        newEmpIds.push(replaceNewEmpId);
+      }
+    }
+
+    if (newEmpIds.length === 0) {
+      alert("A equipe não pode ficar sem nenhum integrante. Selecione um substituto ou exclua a equipe.");
+      return;
+    }
+
+    let updatedName = replaceTeam.name;
+    if (autoUpdateNameOnReplace) {
+      const names = newEmpIds
+        .map((id) => {
+          const emp = employees.find((e) => e.id === id);
+          return emp ? emp.nickname || emp.name.split(" ")[0] : "";
+        })
+        .filter(Boolean);
+      if (names.length > 0) {
+        updatedName = names.join(" - ");
+      }
+    }
+
+    await updateTeam(replaceTeam.id, {
+      employee_ids: newEmpIds,
+      name: updatedName,
+    });
+
+    const oldEmp = employees.find((e) => e.id === replaceOldEmpId);
+    const newEmp = employees.find((e) => e.id === replaceNewEmpId);
+
+    setReplaceDialogOpen(false);
+    setFeedbackMsg(
+      onlyRemove
+        ? `${oldEmp?.name || "Colaborador"} removido da equipe "${updatedName}".`
+        : `Substituição concluída: ${oldEmp?.name || "Faltante"} ➔ ${newEmp?.name || "Substituto"} na equipe "${updatedName}"!`
+    );
+    setTimeout(() => setFeedbackMsg(null), 4500);
+  };
+
+  // ============================================================================
+  // ITEM 6: Clonagem Inteligente (Último Dia Útil / Data Específica)
+  // ============================================================================
+  const handleOpenSmartClone = async () => {
+    setIsCloning(true);
+    setCloneDialogOpen(true);
+
+    const lastFound = await findLastDateWithTeams(date);
+    if (lastFound) {
+      setLastDetectedDate(lastFound.date);
+      setCloneSourceDate(lastFound.date);
+      setClonePreviewTeams(lastFound.teams);
+      setSelectedCloneIds(lastFound.teams.map((t) => t.id));
+    } else {
+      const yesterday = getLocalDateString(-1);
+      setLastDetectedDate(null);
+      setCloneSourceDate(yesterday);
+      setClonePreviewTeams([]);
+      setSelectedCloneIds([]);
+    }
+    setIsCloning(false);
+  };
+
+  const handleChangeCloneSourceDate = async (newSourceDate: string) => {
+    setCloneSourceDate(newSourceDate);
+    if (!newSourceDate) {
+      setClonePreviewTeams([]);
+      setSelectedCloneIds([]);
+      return;
+    }
+    setIsCloning(true);
+    const preview = await fetchPreviewTeamsForDate(newSourceDate);
+    setClonePreviewTeams(preview);
+    setSelectedCloneIds(preview.map((t) => t.id));
+    setIsCloning(false);
+  };
+
+  const handleExecuteSmartClone = async () => {
+    const toClone = clonePreviewTeams.filter((t) => selectedCloneIds.includes(t.id));
+    if (toClone.length === 0) {
+      alert("Selecione pelo menos uma equipe para clonar.");
+      return;
+    }
+    setIsCloning(true);
+    const count = await cloneSelectedTeams(toClone, date);
+    setIsCloning(false);
+    setCloneDialogOpen(false);
+    setFeedbackMsg(`${count} equipe(s) clonada(s) de ${formatBrDate(cloneSourceDate)} para ${formatBrDate(date)}!`);
+    setTimeout(() => setFeedbackMsg(null), 4500);
+  };
+
+  // ============================================================================
+  // ITEM 4: Rastreabilidade / Histórico por Local, Tarefa ou Funcionário
+  // ============================================================================
+  const handleOpenHistoryModal = async () => {
+    setHistoryDialogOpen(true);
+    await fetchAllHistoryTeams();
+  };
+
+  const historySupervisors = useMemo(() => {
+    const set = new Set<string>();
+    historyTeams.forEach((t) => {
+      if (t.supervisor_name?.trim()) set.add(t.supervisor_name.trim());
+      if (t.engineer_name?.trim()) set.add(t.engineer_name.trim());
+    });
+    return Array.from(set);
+  }, [historyTeams]);
+
+  const filteredHistoryTeams = useMemo(() => {
+    return historyTeams.filter((team) => {
+      if (histStartDate && team.date < histStartDate) return false;
+      if (histEndDate && team.date > histEndDate) return false;
+
+      if (histEmpId !== "TODOS") {
+        if (!team.employee_ids.includes(histEmpId)) return false;
+      }
+
+      if (histSupervisor !== "TODOS") {
+        const matchSup =
+          team.supervisor_name?.trim() === histSupervisor || team.engineer_name?.trim() === histSupervisor;
+        if (!matchSup) return false;
+      }
+
+      if (!histSearch.trim()) return true;
+      const q = histSearch.toLowerCase();
+
+      if (team.location?.toLowerCase().includes(q)) return true;
+      if (team.task_description?.toLowerCase().includes(q)) return true;
+      if (team.name?.toLowerCase().includes(q)) return true;
+      if (team.notes?.toLowerCase().includes(q)) return true;
+      if (team.supervisor_name?.toLowerCase().includes(q)) return true;
+      if (team.engineer_name?.toLowerCase().includes(q)) return true;
+
+      const memberMatch = team.employee_ids.some((id) => {
+        const emp = employees.find((e) => e.id === id);
+        return (
+          emp?.name.toLowerCase().includes(q) ||
+          emp?.nickname?.toLowerCase().includes(q) ||
+          emp?.role.toLowerCase().includes(q)
+        );
+      });
+      return memberMatch;
+    });
+  }, [historyTeams, histStartDate, histEndDate, histEmpId, histSupervisor, histSearch, employees]);
+
+  const handleExportHistoryExcel = async () => {
+    if (filteredHistoryTeams.length === 0) {
+      alert("Nenhum registro encontrado no histórico para exportar.");
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Rastreabilidade de Obra");
+
+    worksheet.columns = [
+      { key: "date", width: 14 },
+      { key: "location", width: 28 },
+      { key: "task", width: 38 },
+      { key: "team", width: 26 },
+      { key: "members", width: 36 },
+      { key: "hierarchy", width: 30 },
+      { key: "status", width: 16 },
+      { key: "notes", width: 28 },
+    ];
+
+    const titleRow = worksheet.addRow(["RELATÓRIO DE RASTREABILIDADE & HISTÓRICO DE SERVIÇOS"]);
+    worksheet.mergeCells("A1:H1");
+    titleRow.font = { name: "Arial", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+    titleRow.alignment = { horizontal: "center", vertical: "middle" };
+    titleRow.height = 30;
+    titleRow.getCell(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF0F172A" },
+    };
+
+    const headerRow = worksheet.addRow([
+      "Data",
+      "Local / Frente de Obra",
+      "Tarefa / Serviço Executado",
+      "Equipe",
+      "Integrantes",
+      "Engenheiro ➔ Encarregado",
+      "Status",
+      "Observações",
+    ]);
+    headerRow.height = 24;
+    headerRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    for (let c = 1; c <= 8; c++) {
+      headerRow.getCell(c).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF334155" },
+      };
+    }
+
+    filteredHistoryTeams.forEach((team, idx) => {
+      const members = team.employee_ids
+        .map((id) => {
+          const emp = employees.find((e) => e.id === id);
+          return emp ? `${emp.name} (${emp.role})` : null;
+        })
+        .filter(Boolean)
+        .join(", ");
+
+      const row = worksheet.addRow([
+        formatBrDate(team.date),
+        team.location || "-",
+        team.task_description || "-",
+        team.name,
+        members,
+        team.engineer_name || team.supervisor_name
+          ? `${team.engineer_name || "-"} ➔ ${team.supervisor_name || "-"}`
+          : "-",
+        statusStyles[team.status]?.label || team.status,
+        team.notes || "-",
+      ]);
+      row.alignment = { vertical: "middle", wrapText: true };
+      const bg = idx % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC";
+      for (let c = 1; c <= 8; c++) {
+        row.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+        row.getCell(c).border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+      }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    saveAs(blob, `Rastreabilidade_Equipes_${getLocalDateString(0)}.xlsx`);
+  };
+
+  // ============================================================================
+  // WhatsApp & Excel Export of Current Day
+  // ============================================================================
   const handleCopyToWhatsApp = () => {
     if (filteredTeams.length === 0) {
       alert("Nenhuma equipe encontrada para esta data com os filtros atuais.");
       return;
     }
 
-    const [y, m, d] = date.split("-");
-    const formattedDate = `${d}/${m}/${y}`;
-
+    const formattedDate = formatBrDate(date);
     let text = `📋 *ESCALA DE EQUIPES & TAREFAS - ${formattedDate}*\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
@@ -514,7 +787,6 @@ export default function EquipesPage() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Escala de Equipes");
 
-    // Configuração de Colunas
     worksheet.columns = [
       { key: "num", width: 6 },
       { key: "status", width: 16 },
@@ -529,7 +801,6 @@ export default function EquipesPage() {
       { key: "hidden", width: 16 },
     ];
 
-    // Linha 1: Título Principal
     const titleRow = worksheet.addRow(["RELATÓRIO DIÁRIO DE EQUIPES, TAREFAS & RESPONSÁVEIS"]);
     worksheet.mergeCells("A1:K1");
     titleRow.font = { name: "Arial", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
@@ -538,12 +809,10 @@ export default function EquipesPage() {
     titleRow.getCell(1).fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: "FF0F172A" }, // Slate-900
+      fgColor: { argb: "FF0F172A" },
     };
 
-    // Linha 2: Subtítulo com Data
-    const [y, m, d] = date.split("-");
-    const formattedDate = `${d}/${m}/${y}`;
+    const formattedDate = formatBrDate(date);
     const nowTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const subRow = worksheet.addRow([
       `Data da Escala: ${formattedDate} (${formattedDateTitle})  |  Gerado em: ${new Date().toLocaleDateString("pt-BR")} às ${nowTime} ${showHidden ? "(Incluindo Equipes de Rotina/Ocultas)" : ""}`,
@@ -553,7 +822,6 @@ export default function EquipesPage() {
     subRow.alignment = { horizontal: "center", vertical: "middle" };
     subRow.height = 20;
 
-    // Linha 3: Resumo KPIs
     const kpiRow = worksheet.addRow([
       `Resumo Geral:  ${filteredTeams.length} equipe(s) listadas  |  ${totalAllocated} trabalhador(es) alocados  |  ${completedCount} concluída(s)  |  ${pendingOrProgressCount} em andamento/pendentes`,
     ]);
@@ -564,12 +832,11 @@ export default function EquipesPage() {
     kpiRow.getCell(1).fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: "FFF1F5F9" }, // Slate-100
+      fgColor: { argb: "FFF1F5F9" },
     };
 
-    worksheet.addRow([]); // Espaço em branco
+    worksheet.addRow([]);
 
-    // Linha 5: Cabeçalho das Colunas
     const headerRow = worksheet.addRow([
       "Nº",
       "Status",
@@ -592,7 +859,7 @@ export default function EquipesPage() {
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FF334155" }, // Slate-700
+        fgColor: { argb: "FF334155" },
       };
       cell.border = {
         top: { style: "thin", color: { argb: "FF94A3B8" } },
@@ -602,7 +869,6 @@ export default function EquipesPage() {
       };
     }
 
-    // Linhas de Dados
     filteredTeams.forEach((team, index) => {
       const memberNames: string[] = [];
       const memberRoles: string[] = [];
@@ -649,7 +915,6 @@ export default function EquipesPage() {
       row.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
       row.getCell(11).alignment = { horizontal: "center", vertical: "middle" };
 
-      // Cor no status
       if (team.status === "concluida") {
         row.getCell(2).font = { color: { argb: "FF059669" }, bold: true };
       } else if (team.status === "pendente") {
@@ -658,7 +923,6 @@ export default function EquipesPage() {
         row.getCell(2).font = { color: { argb: "FF2563EB" }, bold: true };
       }
 
-      // Fundo zebrado
       const bg = index % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC";
       for (let c = 1; c <= 11; c++) {
         const cell = row.getCell(c);
@@ -693,22 +957,50 @@ export default function EquipesPage() {
   const renderTeamCard = (team: DailyTeam) => {
     const config = statusStyles[team.status] || statusStyles.em_andamento;
     const parentTeam = team.parent_team_id ? teams.find((t) => t.id === team.parent_team_id) : null;
+    const absentMembers = getTeamAbsentMembers(team);
+    const hasDesfalque = absentMembers.length > 0;
 
     return (
       <Card
         key={team.id}
-        className={`shadow-xs border-l-4 ${config.border} hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between ${
+        className={`shadow-xs border-l-4 ${
+          hasDesfalque ? "border-l-red-500 ring-1 ring-red-200 dark:ring-red-900/50" : config.border
+        } hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between ${
           team.is_hidden ? "bg-muted/15 border-dashed" : ""
         }`}
       >
         <CardHeader className="p-4 pb-2 space-y-2">
+          {/* Alerta de Equipe Desfalcada (Item 1) */}
+          {hasDesfalque && (
+            <div className="flex items-center justify-between gap-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-2.5 py-1.5 rounded-lg text-xs text-red-800 dark:text-red-300">
+              <div className="flex items-center gap-1.5 font-semibold">
+                <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+                <span>
+                  Equipe Desfalcada ({absentMembers.length}{" "}
+                  {absentMembers.length === 1 ? "Falta no Ponto" : "Faltas no Ponto"})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenReplaceModal(team, absentMembers[0].emp.id)}
+                className="text-[11px] font-bold underline hover:text-red-950 cursor-pointer shrink-0 flex items-center gap-1"
+              >
+                <ArrowLeftRight className="h-3 w-3" />
+                Substituir
+              </button>
+            </div>
+          )}
+
           {/* Top Bar: Name, Badges & Actions */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-bold text-base text-foreground truncate">{team.name}</h4>
                 {team.is_hidden && (
-                  <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300">
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300"
+                  >
                     <EyeOff className="h-3 w-3 mr-1" />
                     Rotina / Oculta
                   </Badge>
@@ -763,9 +1055,7 @@ export default function EquipesPage() {
               </div>
             </div>
             {team.notes && (
-              <p className="text-[11px] text-muted-foreground mt-1.5 pl-6 italic">
-                Obs: {team.notes}
-              </p>
+              <p className="text-[11px] text-muted-foreground mt-1.5 pl-6 italic">Obs: {team.notes}</p>
             )}
           </div>
         </CardHeader>
@@ -785,26 +1075,49 @@ export default function EquipesPage() {
                 return (
                   <div
                     key={id}
-                    className="flex items-center justify-between p-1.5 rounded-md bg-background border text-xs"
+                    className={`flex items-center justify-between p-1.5 rounded-md border text-xs ${
+                      att.isAbsent
+                        ? "bg-red-50/70 border-red-200 dark:bg-red-950/30 dark:border-red-900"
+                        : "bg-background"
+                    }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="h-6 w-6 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-[10px] shrink-0">
+                      <div
+                        className={`h-6 w-6 rounded-full font-bold flex items-center justify-center text-[10px] shrink-0 ${
+                          att.isAbsent
+                            ? "bg-red-100 text-red-700"
+                            : "bg-primary/10 text-primary"
+                        }`}
+                      >
                         {(emp.nickname || emp.name).charAt(0).toUpperCase()}
                       </div>
                       <div className="truncate">
-                        <span className="font-semibold text-foreground">
+                        <span className={`font-semibold ${att.isAbsent ? "line-through text-red-700 dark:text-red-400" : "text-foreground"}`}>
                           {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name}
                         </span>
                         <span className="text-muted-foreground text-[10px] ml-1.5">• {emp.role}</span>
                       </div>
                     </div>
 
-                    <span
-                      className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${att.color}`}
-                      title={`Status de ponto em ${date}: ${att.label}`}
-                    >
-                      {att.label}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {att.isAbsent && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReplaceModal(team, emp.id)}
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 flex items-center gap-1 cursor-pointer print:hidden"
+                          title="Substituir este colaborador ausente por alguém disponível"
+                        >
+                          <ArrowLeftRight className="h-2.5 w-2.5" />
+                          Trocar
+                        </button>
+                      )}
+                      <span
+                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${att.color}`}
+                        title={`Status de ponto em ${date}: ${att.label}`}
+                      >
+                        {att.label}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -824,7 +1137,6 @@ export default function EquipesPage() {
             </Button>
 
             <div className="flex items-center gap-1">
-              {/* Toggle Hidden Shortcut */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -832,7 +1144,11 @@ export default function EquipesPage() {
                 className={`h-8 w-8 ${
                   team.is_hidden ? "text-amber-600 hover:text-amber-700" : "text-muted-foreground hover:text-foreground"
                 }`}
-                title={team.is_hidden ? "Equipe oculta na visão diária (clique para reexibir)" : "Ocultar equipe da visão diária (rotina de compras)"}
+                title={
+                  team.is_hidden
+                    ? "Equipe oculta na visão diária (clique para reexibir)"
+                    : "Ocultar equipe da visão diária (rotina de compras)"
+                }
               >
                 {team.is_hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               </Button>
@@ -917,14 +1233,27 @@ export default function EquipesPage() {
             <Plus className="h-4 w-4" />
             Nova Equipe / Dupla
           </Button>
+
+          {/* Item 6: Botão de Clonagem Inteligente */}
           <Button
             variant="outline"
-            onClick={handleCloneYesterday}
-            className="gap-2 text-xs md:text-sm"
-            title="Copiar todas as equipes formadas no dia anterior para hoje"
+            onClick={handleOpenSmartClone}
+            className="gap-2 text-xs md:text-sm font-medium"
+            title="Repetir equipes puxando automaticamente do último dia útil ou escolhendo uma data"
           >
-            <RotateCcw className="h-4 w-4 text-muted-foreground" />
-            Repetir de Ontem
+            <RotateCcw className="h-4 w-4 text-primary" />
+            Repetir Escala Anterior
+          </Button>
+
+          {/* Item 4: Botão de Rastreabilidade / Histórico */}
+          <Button
+            variant="outline"
+            onClick={handleOpenHistoryModal}
+            className="gap-2 text-xs md:text-sm font-medium border-primary/30 hover:bg-primary/5"
+            title="Pesquisar histórico por local, apartamento, tarefa ou funcionário"
+          >
+            <History className="h-4 w-4 text-primary" />
+            Rastreabilidade / Histórico
           </Button>
         </div>
 
@@ -1026,6 +1355,30 @@ export default function EquipesPage() {
         </div>
       </div>
 
+      {/* Item 1: Global Banner Alert if any team has absent members today */}
+      {desfalcadasTeams.length > 0 && (
+        <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-4 py-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
+          <div className="flex items-start sm:items-center gap-2.5">
+            <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5 sm:mt-0" />
+            <div className="text-xs sm:text-sm text-red-900 dark:text-red-200">
+              <span className="font-bold">Atenção — Equipe(s) Desfalcada(s):</span> Existem{" "}
+              <span className="font-bold underline">{desfalcadasTeams.length} equipe(s)</span> com integrantes que
+              receberam <strong>Falta</strong> no apontamento de hoje.
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant={statusFilter === "desfalcadas" ? "default" : "outline"}
+              onClick={() => setStatusFilter(statusFilter === "desfalcadas" ? "todos" : "desfalcadas")}
+              className="h-8 text-xs border-red-300 text-red-800 hover:bg-red-100 dark:text-red-200"
+            >
+              {statusFilter === "desfalcadas" ? "Mostrar Todas" : "Filtrar Desfalcadas"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {feedbackMsg && (
         <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-4 py-2.5 rounded-lg text-sm font-medium animate-in fade-in duration-200 flex items-center justify-between">
           <span>{feedbackMsg}</span>
@@ -1044,7 +1397,9 @@ export default function EquipesPage() {
               <h3 className="text-2xl font-bold mt-1">
                 {visibleTeamsCount}{" "}
                 {hiddenTeamsCount > 0 && (
-                  <span className="text-xs font-normal text-muted-foreground">({hiddenTeamsCount} oculta{hiddenTeamsCount > 1 ? "s" : ""})</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    ({hiddenTeamsCount} oculta{hiddenTeamsCount > 1 ? "s" : ""})
+                  </span>
                 )}
               </h3>
             </div>
@@ -1069,11 +1424,17 @@ export default function EquipesPage() {
         <Card className="shadow-xs">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Em Andamento</p>
-              <h3 className="text-2xl font-bold mt-1 text-blue-600">{pendingOrProgressCount}</h3>
+              <p className="text-xs font-medium text-muted-foreground">Equipes Desfalcadas</p>
+              <h3 className={`text-2xl font-bold mt-1 ${desfalcadasTeams.length > 0 ? "text-red-600" : "text-slate-500"}`}>
+                {desfalcadasTeams.length}
+              </h3>
             </div>
-            <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
-              <Clock className="h-5 w-5" />
+            <div
+              className={`h-10 w-10 rounded-full flex items-center justify-center ${
+                desfalcadasTeams.length > 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              <UserX className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>
@@ -1100,7 +1461,7 @@ export default function EquipesPage() {
             <div className="relative flex-1 w-full">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por funcionário, equipe, encarregado, engenheiro ou tarefa..."
+                placeholder="Buscar por funcionário, equipe, encarregado, local ou tarefa..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9 h-9 text-xs"
@@ -1116,6 +1477,7 @@ export default function EquipesPage() {
                 <option value="em_andamento">Em Andamento</option>
                 <option value="concluida">Concluída</option>
                 <option value="pendente">Pendente</option>
+                <option value="desfalcadas">⚠️ Com Desfalque ({desfalcadasTeams.length})</option>
               </select>
             </div>
           </div>
@@ -1132,12 +1494,16 @@ export default function EquipesPage() {
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                 {hiddenTeamsCount > 0 && !showHidden
                   ? `Existem ${hiddenTeamsCount} equipe(s) oculta(s) nesta data. Clique em "Ver Ocultas" acima para exibi-las.`
-                  : "Crie duplas ou grupos com os funcionários cadastrados e atribua a tarefa do dia."}
+                  : "Crie duplas ou grupos com os funcionários cadastrados ou repita a última escala válida."}
               </p>
-              <div className="pt-2 flex justify-center gap-2">
+              <div className="pt-2 flex flex-wrap justify-center gap-2">
                 <Button size="sm" onClick={() => handleOpenNewDialog()}>
                   <Plus className="h-4 w-4 mr-1" />
                   Criar Primeira Equipe
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleOpenSmartClone}>
+                  <RotateCcw className="h-4 w-4 mr-1" />
+                  Repetir Escala Anterior
                 </Button>
                 {hiddenTeamsCount > 0 && !showHidden && (
                   <Button size="sm" variant="outline" onClick={() => setShowHidden(true)}>
@@ -1152,7 +1518,6 @@ export default function EquipesPage() {
             <div className="space-y-6">
               {groupedHierarchy.map((group) => (
                 <div key={group.key} className="space-y-3 border rounded-xl p-4 bg-muted/15 shadow-xs">
-                  {/* Group Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
                     <div className="flex items-center gap-2.5">
                       <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -1160,22 +1525,18 @@ export default function EquipesPage() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-foreground text-sm sm:text-base">
-                            {group.engineer}
-                          </span>
+                          <span className="font-bold text-foreground text-sm sm:text-base">{group.engineer}</span>
                           <span className="text-muted-foreground">➔</span>
-                          <span className="font-semibold text-primary text-sm sm:text-base">
-                            {group.supervisor}
-                          </span>
+                          <span className="font-semibold text-primary text-sm sm:text-base">{group.supervisor}</span>
                         </div>
                         <p className="text-[11px] text-muted-foreground">
-                          {group.teams.length} equipe{group.teams.length !== 1 ? "s" : ""} vinculada{group.teams.length !== 1 ? "s" : ""} • {group.totalWorkers} trabalhadores sob este comando
+                          {group.teams.length} equipe{group.teams.length !== 1 ? "s" : ""} vinculada
+                          {group.teams.length !== 1 ? "s" : ""} • {group.totalWorkers} trabalhadores sob este comando
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Group Teams */}
                   {viewMode === "cards" ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                       {group.teams.map((team) => renderTeamCard(team))}
@@ -1184,10 +1545,14 @@ export default function EquipesPage() {
                     <div className="divide-y border rounded-lg overflow-hidden bg-background">
                       {group.teams.map((team) => {
                         const config = statusStyles[team.status] || statusStyles.em_andamento;
+                        const absentMembers = getTeamAbsentMembers(team);
                         return (
-                          <div key={team.id} className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-muted/30">
+                          <div
+                            key={team.id}
+                            className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-muted/30"
+                          >
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-bold text-sm text-foreground">{team.name}</span>
                                 <button
                                   onClick={() => toggleTeamStatus(team.id)}
@@ -1195,8 +1560,20 @@ export default function EquipesPage() {
                                 >
                                   {config.label}
                                 </button>
+                                {absentMembers.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenReplaceModal(team, absentMembers[0].emp.id)}
+                                    className="text-[10px] font-semibold bg-red-100 text-red-800 px-2 py-0.5 rounded-full border border-red-300 flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Desfalcada ({absentMembers.length}) • Substituir
+                                  </button>
+                                )}
                                 {team.is_hidden && (
-                                  <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">Rotina</span>
+                                  <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
+                                    Rotina
+                                  </span>
                                 )}
                               </div>
                               <p className="text-xs text-foreground/90 mt-1">
@@ -1205,13 +1582,28 @@ export default function EquipesPage() {
                               </p>
                             </div>
                             <div className="flex items-center gap-1 shrink-0 print:hidden">
-                              <Button variant="ghost" size="icon" onClick={() => toggleTeamHidden(team.id)} className="h-7 w-7 text-muted-foreground">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => toggleTeamHidden(team.id)}
+                                className="h-7 w-7 text-muted-foreground"
+                              >
                                 {team.is_hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => handleOpenEditDialog(team)} className="h-7 w-7 text-muted-foreground">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenEditDialog(team)}
+                                className="h-7 w-7 text-muted-foreground"
+                              >
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => handleDelete(team.id, team.name)} className="h-7 w-7 text-destructive hover:bg-destructive/10">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(team.id, team.name)}
+                                className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                              >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
@@ -1238,7 +1630,7 @@ export default function EquipesPage() {
                       <th className="py-3 px-3 w-28">Status</th>
                       <th className="py-3 px-3 w-44">Equipe</th>
                       <th className="py-3 px-3 min-w-[190px]">Caminho de Comando</th>
-                      <th className="py-3 px-3 min-w-[210px]">Integrantes & Funções</th>
+                      <th className="py-3 px-3 min-w-[230px]">Integrantes & Funções</th>
                       <th className="py-3 px-3 min-w-[190px]">Tarefa do Dia</th>
                       <th className="py-3 px-3 w-32">Local / Frente</th>
                       <th className="py-3 px-3 w-28 text-right print:hidden">Ações</th>
@@ -1247,16 +1639,17 @@ export default function EquipesPage() {
                   <tbody className="divide-y divide-border/60">
                     {filteredTeams.map((team) => {
                       const config = statusStyles[team.status] || statusStyles.em_andamento;
+                      const absentMembers = getTeamAbsentMembers(team);
 
                       return (
                         <tr
                           key={team.id}
                           className={`hover:bg-muted/30 transition-colors align-top ${
                             team.is_hidden ? "bg-muted/15 opacity-80" : ""
-                          }`}
+                          } ${absentMembers.length > 0 ? "bg-red-50/20 dark:bg-red-950/10" : ""}`}
                         >
                           {/* Status */}
-                          <td className="py-3 px-3 whitespace-nowrap">
+                          <td className="py-3 px-3 whitespace-nowrap space-y-1">
                             <button
                               onClick={() => toggleTeamStatus(team.id)}
                               title="Clique para alternar status"
@@ -1264,8 +1657,16 @@ export default function EquipesPage() {
                             >
                               {config.label}
                             </button>
+                            {absentMembers.length > 0 && (
+                              <div>
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-red-100 text-red-800 px-1.5 py-0.5 rounded border border-red-300">
+                                  <AlertTriangle className="h-2.5 w-2.5" />
+                                  {absentMembers.length} Falta
+                                </span>
+                              </div>
+                            )}
                             {team.is_hidden && (
-                              <div className="mt-1">
+                              <div>
                                 <span className="text-[9px] bg-slate-100 text-slate-700 px-1 py-0.5 rounded border border-slate-300">
                                   Rotina
                                 </span>
@@ -1287,14 +1688,10 @@ export default function EquipesPage() {
                           <td className="py-3 px-3">
                             {team.engineer_name || team.supervisor_name ? (
                               <div className="text-[11px] space-y-0.5">
-                                <div className="font-medium text-foreground">
-                                  {team.engineer_name || "-"}
-                                </div>
+                                <div className="font-medium text-foreground">{team.engineer_name || "-"}</div>
                                 <div className="text-muted-foreground flex items-center gap-1">
                                   <span>➔</span>
-                                  <span className="font-semibold text-primary">
-                                    {team.supervisor_name || "-"}
-                                  </span>
+                                  <span className="font-semibold text-primary">{team.supervisor_name || "-"}</span>
                                 </div>
                               </div>
                             ) : (
@@ -1313,20 +1710,38 @@ export default function EquipesPage() {
                                 return (
                                   <div
                                     key={id}
-                                    className="inline-flex items-center justify-between gap-2 p-1 rounded bg-background border text-[11px]"
+                                    className={`inline-flex items-center justify-between gap-2 p-1 rounded border text-[11px] ${
+                                      att.isAbsent ? "bg-red-50 border-red-200" : "bg-background"
+                                    }`}
                                   >
                                     <div className="flex items-center gap-1.5 truncate">
-                                      <span className="font-semibold text-foreground">
+                                      <span
+                                        className={`font-semibold ${
+                                          att.isAbsent ? "line-through text-red-700" : "text-foreground"
+                                        }`}
+                                      >
                                         {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name}
                                       </span>
                                       <span className="text-muted-foreground text-[10px]">• {emp.role}</span>
                                     </div>
-                                    <span
-                                      className={`text-[9px] font-medium px-1.5 py-0.2 rounded shrink-0 ${att.color}`}
-                                      title={`Ponto: ${att.label}`}
-                                    >
-                                      {att.label}
-                                    </span>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {att.isAbsent && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenReplaceModal(team, emp.id)}
+                                          className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 cursor-pointer print:hidden"
+                                          title="Substituir faltante"
+                                        >
+                                          Trocar
+                                        </button>
+                                      )}
+                                      <span
+                                        className={`text-[9px] font-medium px-1.5 py-0.2 rounded shrink-0 ${att.color}`}
+                                        title={`Ponto: ${att.label}`}
+                                      >
+                                        {att.label}
+                                      </span>
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -1335,13 +1750,9 @@ export default function EquipesPage() {
 
                           {/* Tarefa */}
                           <td className="py-3 px-3">
-                            <div className="font-medium text-foreground">
-                              {team.task_description || "-"}
-                            </div>
+                            <div className="font-medium text-foreground">{team.task_description || "-"}</div>
                             {team.notes && (
-                              <p className="text-[10px] text-muted-foreground italic mt-0.5">
-                                Obs: {team.notes}
-                              </p>
+                              <p className="text-[10px] text-muted-foreground italic mt-0.5">Obs: {team.notes}</p>
                             )}
                           </td>
 
@@ -1365,9 +1776,15 @@ export default function EquipesPage() {
                                 size="icon"
                                 onClick={() => toggleTeamHidden(team.id)}
                                 className={`h-7 w-7 ${
-                                  team.is_hidden ? "text-amber-600 hover:text-amber-700" : "text-muted-foreground hover:text-foreground"
+                                  team.is_hidden
+                                    ? "text-amber-600 hover:text-amber-700"
+                                    : "text-muted-foreground hover:text-foreground"
                                 }`}
-                                title={team.is_hidden ? "Reexibir equipe na visão diária" : "Ocultar equipe da visão diária"}
+                                title={
+                                  team.is_hidden
+                                    ? "Reexibir equipe na visão diária"
+                                    : "Ocultar equipe da visão diária"
+                                }
                               >
                                 {team.is_hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                               </Button>
@@ -1472,7 +1889,9 @@ export default function EquipesPage() {
         </div>
       </div>
 
-      {/* Modal Dialog: Criar / Editar Equipe */}
+      {/* ==========================================================================
+          MODAL 1: CRIAR / EDITAR EQUIPE
+         ========================================================================== */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col">
           <DialogHeader>
@@ -1557,10 +1976,10 @@ export default function EquipesPage() {
                     {engineerName &&
                       !["Engenheiro 01", "Engenheiro 02", "Engenheiro 03"].includes(engineerName) &&
                       !activeEmployees.some(
-                        (e) => (e.nickname ? `${e.name} (${e.nickname})` : e.name) === engineerName || e.name === engineerName
-                      ) && (
-                        <option value={engineerName}>{engineerName} (Personalizado)</option>
-                      )}
+                        (e) =>
+                          (e.nickname ? `${e.name} (${e.nickname})` : e.name) === engineerName ||
+                          e.name === engineerName
+                      ) && <option value={engineerName}>{engineerName} (Personalizado)</option>}
                   </select>
                 </div>
 
@@ -1606,10 +2025,10 @@ export default function EquipesPage() {
                     {supervisorName &&
                       !["Encarregado 01", "Encarregado 02", "Encarregado 03"].includes(supervisorName) &&
                       !activeEmployees.some(
-                        (e) => (e.nickname ? `${e.name} (${e.nickname})` : e.name) === supervisorName || e.name === supervisorName
-                      ) && (
-                        <option value={supervisorName}>{supervisorName} (Personalizado)</option>
-                      )}
+                        (e) =>
+                          (e.nickname ? `${e.name} (${e.nickname})` : e.name) === supervisorName ||
+                          e.name === supervisorName
+                      ) && <option value={supervisorName}>{supervisorName} (Personalizado)</option>}
                   </select>
                 </div>
               </div>
@@ -1649,12 +2068,16 @@ export default function EquipesPage() {
                 className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
               />
               <div className="flex-1 cursor-pointer" onClick={() => setIsHidden(!isHidden)}>
-                <label htmlFor="isHiddenCheck" className="text-xs font-semibold text-foreground cursor-pointer flex items-center gap-1.5">
+                <label
+                  htmlFor="isHiddenCheck"
+                  className="text-xs font-semibold text-foreground cursor-pointer flex items-center gap-1.5"
+                >
                   <EyeOff className="h-3.5 w-3.5 text-amber-600" />
                   Ocultar da visualização diária padrão
                 </label>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Ideal para equipes com rotina contínua/fixa (como Compras, Almoxarifado, Transporte) que não precisam poluir a escala diária da obra.
+                  Ideal para equipes com rotina contínua/fixa (como Compras, Almoxarifado, Transporte) que não precisam
+                  poluir a escala diária da obra.
                 </p>
               </div>
             </div>
@@ -1668,7 +2091,6 @@ export default function EquipesPage() {
                 </Label>
               </div>
 
-              {/* Search employees */}
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
@@ -1679,7 +2101,6 @@ export default function EquipesPage() {
                 />
               </div>
 
-              {/* Employee Selection Grid */}
               <div className="border rounded-lg p-2 max-h-44 overflow-y-auto space-y-1.5 bg-muted/20">
                 {activeEmployees
                   .filter((emp) => {
@@ -1741,7 +2162,6 @@ export default function EquipesPage() {
                 className="w-full text-xs p-2.5 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
               />
 
-              {/* Task Quick Presets */}
               <div className="flex flex-wrap gap-1.5 pt-1">
                 <span className="text-[10px] text-muted-foreground font-medium self-center mr-1">Atalhos:</span>
                 {TASK_PRESETS.map((preset) => (
@@ -1816,6 +2236,481 @@ export default function EquipesPage() {
             </Button>
             <Button size="sm" onClick={handleSaveTeam} className="font-semibold">
               {editingTeamId ? "Salvar Alterações" : "Criar Equipe"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ==========================================================================
+          MODAL 2 (ITEM 1): SUBSTITUIÇÃO RÁPIDA DE INTEGRANTE AUSENTE (DESFALQUE)
+         ========================================================================== */}
+      <Dialog open={replaceDialogOpen} onOpenChange={setReplaceDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2 text-red-700 dark:text-red-400">
+              <ArrowLeftRight className="h-5 w-5" />
+              Remanejar / Substituir Colaborador Ausente
+            </DialogTitle>
+          </DialogHeader>
+
+          {replaceTeam && replaceOldEmpId && (
+            <div className="space-y-4 py-2 text-xs">
+              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 space-y-1">
+                <p className="text-muted-foreground">Equipe atual:</p>
+                <p className="font-bold text-sm text-foreground">{replaceTeam.name}</p>
+                <p className="text-red-700 dark:text-red-300 font-semibold flex items-center gap-1.5 pt-1">
+                  <UserX className="h-4 w-4" />
+                  Ausente:{" "}
+                  {(() => {
+                    const emp = employees.find((e) => e.id === replaceOldEmpId);
+                    return emp ? `${emp.name} (${emp.role})` : "Colaborador";
+                  })()}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="replaceSelect" className="text-xs font-semibold flex items-center gap-1.5">
+                  <UserPlus className="h-3.5 w-3.5 text-emerald-600" />
+                  Escolher Substituto para a Equipe:
+                </Label>
+                <select
+                  id="replaceSelect"
+                  value={replaceNewEmpId}
+                  onChange={(e) => setReplaceNewEmpId(e.target.value)}
+                  className="w-full h-9 px-2.5 rounded-md border border-input bg-background text-xs font-medium focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+                >
+                  <option value="">Selecione um colaborador disponível...</option>
+                  <optgroup label="Disponíveis Hoje (Presentes e Sem Equipe)">
+                    {unassignedEmployees
+                      .filter((e) => getEmpAttendanceInfo(e.id).isPresent)
+                      .map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          🟢 {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name} — {emp.role} (Presente)
+                        </option>
+                      ))}
+                  </optgroup>
+                  <optgroup label="Disponíveis Hoje (Sem Registro de Ponto)">
+                    {unassignedEmployees
+                      .filter((e) => !getEmpAttendanceInfo(e.id).isPresent && !getEmpAttendanceInfo(e.id).isAbsent)
+                      .map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          ⚪ {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name} — {emp.role}
+                        </option>
+                      ))}
+                  </optgroup>
+                  <optgroup label="Outros Funcionários Ativos">
+                    {activeEmployees
+                      .filter((e) => !replaceTeam.employee_ids.includes(e.id) && !unassignedEmployees.some((u) => u.id === e.id))
+                      .map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name} — {emp.role} (Já em outra equipe)
+                        </option>
+                      ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="autoUpdateName"
+                  checked={autoUpdateNameOnReplace}
+                  onChange={(e) => setAutoUpdateNameOnReplace(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-primary cursor-pointer"
+                />
+                <label htmlFor="autoUpdateName" className="text-xs text-muted-foreground cursor-pointer">
+                  Atualizar o nome da equipe automaticamente com os novos integrantes
+                </label>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col sm:flex-row sm:justify-between gap-2 pt-3 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleConfirmReplace(true)}
+              className="text-xs text-red-600 border-red-200 hover:bg-red-50"
+            >
+              Apenas Remover Faltante
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setReplaceDialogOpen(false)} className="text-xs">
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                disabled={!replaceNewEmpId}
+                onClick={() => handleConfirmReplace(false)}
+                className="text-xs font-semibold"
+              >
+                Substituir Agora
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ==========================================================================
+          MODAL 3 (ITEM 6): CLONAGEM INTELIGENTE (ÚLTIMO DIA ÚTIL / DATA)
+         ========================================================================== */}
+      <Dialog open={cloneDialogOpen} onOpenChange={setCloneDialogOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-primary" />
+              Repetir Escala Anterior (Clonagem Inteligente)
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1 text-xs">
+            {lastDetectedDate && (
+              <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 flex items-center justify-between gap-2">
+                <div>
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold block">
+                    ✨ Último dia útil com escala encontrado automaticamente:
+                  </span>
+                  <span className="font-bold text-sm text-emerald-950 dark:text-emerald-100 capitalize">
+                    {formatBrDate(lastDetectedDate)} — {formatBrDateFull(lastDetectedDate)}
+                  </span>
+                </div>
+                {cloneSourceDate !== lastDetectedDate && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleChangeCloneSourceDate(lastDetectedDate)}
+                    className="h-7 text-[11px]"
+                  >
+                    Usar esta data
+                  </Button>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-lg border bg-muted/20">
+              <Label htmlFor="cloneDateInput" className="text-xs font-semibold">
+                Data de Origem para Copiar:
+              </Label>
+              <Input
+                id="cloneDateInput"
+                type="date"
+                value={cloneSourceDate}
+                onChange={(e) => handleChangeCloneSourceDate(e.target.value)}
+                className="w-auto h-8 text-xs font-medium cursor-pointer"
+              />
+            </div>
+
+            {/* Preview of teams from source date */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-foreground">
+                  Equipes encontradas em {formatBrDate(cloneSourceDate)} ({clonePreviewTeams.length})
+                </span>
+                {clonePreviewTeams.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedCloneIds.length === clonePreviewTeams.length) {
+                        setSelectedCloneIds([]);
+                      } else {
+                        setSelectedCloneIds(clonePreviewTeams.map((t) => t.id));
+                      }
+                    }}
+                    className="text-[11px] text-primary hover:underline font-medium cursor-pointer"
+                  >
+                    {selectedCloneIds.length === clonePreviewTeams.length ? "Desmarcar todas" : "Selecionar todas"}
+                  </button>
+                )}
+              </div>
+
+              {isCloning ? (
+                <div className="py-8 text-center text-muted-foreground">Buscando equipes...</div>
+              ) : clonePreviewTeams.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground border border-dashed rounded-lg">
+                  Nenhuma equipe encontrada na data {formatBrDate(cloneSourceDate)}. Escolha outra data acima.
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-64 overflow-y-auto border rounded-lg p-2 bg-muted/10">
+                  {clonePreviewTeams.map((t) => {
+                    const isChecked = selectedCloneIds.includes(t.id);
+                    const absentsToday = getTeamAbsentMembers(t);
+
+                    return (
+                      <div
+                        key={t.id}
+                        onClick={() => {
+                          if (isChecked) {
+                            setSelectedCloneIds(selectedCloneIds.filter((id) => id !== t.id));
+                          } else {
+                            setSelectedCloneIds([...selectedCloneIds, t.id]);
+                          }
+                        }}
+                        className={`p-2.5 rounded-md border cursor-pointer transition-colors flex items-start justify-between gap-2 ${
+                          isChecked ? "bg-primary/10 border-primary" : "bg-background hover:bg-muted/50"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}}
+                            className="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-primary pointer-events-none"
+                          />
+                          <div className="min-w-0">
+                            <div className="font-bold text-foreground flex items-center gap-1.5 flex-wrap">
+                              <span>{t.name}</span>
+                              {t.location && (
+                                <span className="text-[10px] font-normal text-muted-foreground">📍 {t.location}</span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground truncate">
+                              Tarefa: {t.task_description || "-"}
+                            </p>
+                            {absentsToday.length > 0 && (
+                              <p className="text-[10px] text-red-600 font-semibold mt-0.5 flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                {absentsToday.length} integrante(s) com Falta hoje (
+                                {absentsToday.map((a) => a.emp.nickname || a.emp.name.split(" ")[0]).join(", ")})
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] shrink-0">
+                          {t.employee_ids.length} func.
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="pt-3 border-t">
+            <Button variant="outline" size="sm" onClick={() => setCloneDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              disabled={selectedCloneIds.length === 0 || isCloning}
+              onClick={handleExecuteSmartClone}
+              className="font-semibold"
+            >
+              Clonar {selectedCloneIds.length} Equipe(s) para {formatBrDate(date)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ==========================================================================
+          MODAL 4 (ITEM 4): RASTREABILIDADE & HISTÓRICO DE OBRA
+         ========================================================================== */}
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <History className="h-5 w-5 text-primary" />
+              Rastreabilidade & Histórico da Obra ("Quem fez o quê e quando?")
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 flex-1 overflow-hidden flex flex-col">
+            {/* Search & Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 bg-muted/20 p-3 rounded-xl border">
+              <div className="sm:col-span-2">
+                <Label className="text-[11px] font-semibold text-muted-foreground">
+                  Pesquisar por Local / Apto / Tarefa / Equipe
+                </Label>
+                <div className="relative mt-1">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    value={histSearch}
+                    onChange={(e) => setHistSearch(e.target.value)}
+                    placeholder="Ex: Apto 302, Fachada, Reboco, Hidráulica..."
+                    className="pl-8 h-8 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-[11px] font-semibold text-muted-foreground">Filtrar por Funcionário</Label>
+                <select
+                  value={histEmpId}
+                  onChange={(e) => setHistEmpId(e.target.value)}
+                  className="mt-1 w-full h-8 px-2 rounded-md border border-input bg-background text-xs font-medium"
+                >
+                  <option value="TODOS">Todos os Funcionários</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name} — {emp.role}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <Label className="text-[11px] font-semibold text-muted-foreground">Encarregado / Engenheiro</Label>
+                <select
+                  value={histSupervisor}
+                  onChange={(e) => setHistSupervisor(e.target.value)}
+                  className="mt-1 w-full h-8 px-2 rounded-md border border-input bg-background text-xs font-medium"
+                >
+                  <option value="TODOS">Todos os Responsáveis</option>
+                  {historySupervisors.map((sup) => (
+                    <option key={sup} value={sup}>
+                      {sup}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 sm:col-span-2">
+                <div className="flex-1">
+                  <Label className="text-[10px] text-muted-foreground">De (Data Inicial)</Label>
+                  <Input
+                    type="date"
+                    value={histStartDate}
+                    onChange={(e) => setHistStartDate(e.target.value)}
+                    className="h-8 text-xs mt-0.5"
+                  />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-[10px] text-muted-foreground">Até (Data Final)</Label>
+                  <Input
+                    type="date"
+                    value={histEndDate}
+                    onChange={(e) => setHistEndDate(e.target.value)}
+                    className="h-8 text-xs mt-0.5"
+                  />
+                </div>
+              </div>
+
+              <div className="sm:col-span-2 flex items-end justify-between gap-2 pt-1">
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {filteredHistoryTeams.length} registro(s) encontrado(s)
+                </span>
+                <div className="flex items-center gap-2">
+                  {(histSearch || histEmpId !== "TODOS" || histSupervisor !== "TODOS" || histStartDate || histEndDate) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setHistSearch("");
+                        setHistEmpId("TODOS");
+                        setHistSupervisor("TODOS");
+                        setHistStartDate("");
+                        setHistEndDate("");
+                      }}
+                      className="h-8 text-xs"
+                    >
+                      Limpar Filtros
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportHistoryExcel}
+                    className="h-8 text-xs gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                    Exportar Histórico (Excel)
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Results Table */}
+            <div className="flex-1 overflow-y-auto border rounded-xl">
+              {isLoadingHistory ? (
+                <div className="py-12 text-center text-muted-foreground text-xs">Carregando histórico da obra...</div>
+              ) : filteredHistoryTeams.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground text-xs">
+                  Nenhum registro encontrado para os filtros pesquisados.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-muted/80 sticky top-0 border-b text-muted-foreground font-semibold">
+                    <tr>
+                      <th className="py-2.5 px-3 w-28">Data</th>
+                      <th className="py-2.5 px-3 w-40">Local / Frente</th>
+                      <th className="py-2.5 px-3">Tarefa Realizada</th>
+                      <th className="py-2.5 px-3 w-48">Equipe & Integrantes</th>
+                      <th className="py-2.5 px-3 w-40">Comando</th>
+                      <th className="py-2.5 px-3 w-24">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredHistoryTeams.map((item) => {
+                      const config = statusStyles[item.status] || statusStyles.em_andamento;
+                      return (
+                        <tr key={item.id} className="hover:bg-muted/30 align-top">
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <div className="font-bold text-foreground">{formatBrDate(item.date)}</div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDate(item.date);
+                                setHistoryDialogOpen(false);
+                              }}
+                              className="text-[10px] text-primary hover:underline font-medium cursor-pointer"
+                            >
+                              Abrir este dia ➔
+                            </button>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {item.location ? (
+                              <span className="font-semibold text-primary flex items-center gap-1">
+                                <MapPin className="h-3 w-3 shrink-0" />
+                                {item.location}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="font-medium text-foreground">{item.task_description || "-"}</div>
+                            {item.notes && <div className="text-[10px] text-muted-foreground italic">Obs: {item.notes}</div>}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="font-bold text-foreground mb-0.5">{item.name}</div>
+                            <div className="text-[11px] text-muted-foreground">
+                              {item.employee_ids
+                                .map((id) => {
+                                  const emp = employees.find((e) => e.id === id);
+                                  return emp ? emp.nickname || emp.name : null;
+                                })
+                                .filter(Boolean)
+                                .join(", ")}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-[11px]">
+                            {item.engineer_name || item.supervisor_name ? (
+                              <div>
+                                <div>{item.engineer_name || "-"}</div>
+                                <div className="text-primary font-semibold">➔ {item.supervisor_name || "-"}</div>
+                              </div>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${config.badge}`}>
+                              {config.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t">
+            <Button variant="outline" size="sm" onClick={() => setHistoryDialogOpen(false)}>
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

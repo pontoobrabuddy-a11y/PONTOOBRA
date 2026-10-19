@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Users, HardHat, CheckSquare, BarChart3, Settings, LogOut, TrendingUp, Wallet, Mail, Menu } from "lucide-react";
+import { Users, HardHat, CheckSquare, BarChart3, Settings, LogOut, TrendingUp, Wallet, Mail, Menu, ClipboardList } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: BarChart3, adminOnly: false },
   { name: "Controle de Diárias", href: "/apontamento", icon: CheckSquare, adminOnly: false },
+  { name: "Equipes & Tarefas", href: "/equipes", icon: ClipboardList, adminOnly: false },
   { name: "RH & Financeiro", href: "/rh-financeiro", icon: TrendingUp, adminOnly: true },
   { name: "Funcionários", href: "/funcionarios", icon: Users, adminOnly: true },
   { name: "Pagamentos", href: "/pagamentos", icon: Wallet, adminOnly: true },
@@ -20,6 +21,7 @@ const navigation = [
 const mobileNames: Record<string, string> = {
   "Dashboard": "Início",
   "Controle de Diárias": "Diárias",
+  "Equipes & Tarefas": "Equipes",
   "RH & Financeiro": "RH & Fin.",
   "Funcionários": "Func.",
   "Pagamentos": "Pagamentos",

@@ -31,7 +31,12 @@ import {
   Briefcase,
   LayoutGrid,
   List,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Eye,
+  EyeOff,
+  GitFork,
+  Layers,
+  Network
 } from "lucide-react";
 
 const TASK_PRESETS = [
@@ -44,7 +49,9 @@ const TASK_PRESETS = [
   "Concretagem",
   "Assentamento de Piso / Porcelanato",
   "Limpeza / Bota-fora",
-  "Impermeabilização"
+  "Impermeabilização",
+  "Compras / Suprimentos",
+  "Almoxarifado / Carga"
 ];
 
 const statusStyles: Record<DailyTeamStatus, { label: string; badge: string; border: string }> = {
@@ -83,11 +90,14 @@ export default function EquipesPage() {
     deleteTeam,
     cloneTeamsFromDate,
     toggleTeamStatus,
+    toggleTeamHidden,
   } = useDailyTeams();
 
   const [date, setDate] = useState<string>(() => getLocalDateString(0));
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("todos");
+  const [showHidden, setShowHidden] = useState<boolean>(false);
+  const [groupByHierarchy, setGroupByHierarchy] = useState<boolean>(false);
   const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
@@ -116,6 +126,10 @@ export default function EquipesPage() {
   const [location, setLocation] = useState("");
   const [teamStatus, setTeamStatus] = useState<DailyTeamStatus>("em_andamento");
   const [notes, setNotes] = useState("");
+  const [isHidden, setIsHidden] = useState<boolean>(false);
+  const [engineerName, setEngineerName] = useState("");
+  const [supervisorName, setSupervisorName] = useState("");
+  const [parentTeamId, setParentTeamId] = useState("");
   const [empModalSearch, setEmpModalSearch] = useState("");
 
   // Load teams when date changes
@@ -127,6 +141,42 @@ export default function EquipesPage() {
   const activeEmployees = useMemo(() => {
     return employees.filter((e) => e.status === "ativo");
   }, [employees]);
+
+  // Suggested Engineers and Supervisors from active employees & previous teams
+  const engineerSuggestions = useMemo(() => {
+    const list = new Set<string>();
+    employees.forEach((e) => {
+      if (e.role && e.role.toLowerCase().includes("eng")) {
+        list.add(e.name);
+      }
+    });
+    teams.forEach((t) => {
+      if (t.engineer_name?.trim()) list.add(t.engineer_name.trim());
+    });
+    if (list.size === 0) {
+      list.add("Engenheiro 01");
+      list.add("Engenheiro 02");
+    }
+    return Array.from(list);
+  }, [employees, teams]);
+
+  const supervisorSuggestions = useMemo(() => {
+    const list = new Set<string>();
+    employees.forEach((e) => {
+      const r = (e.role || "").toLowerCase();
+      if (r.includes("encarr") || r.includes("mestre") || r.includes("líder") || r.includes("lider")) {
+        list.add(e.name);
+      }
+    });
+    teams.forEach((t) => {
+      if (t.supervisor_name?.trim()) list.add(t.supervisor_name.trim());
+    });
+    if (list.size === 0) {
+      list.add("Encarregado 01");
+      list.add("Encarregado 02");
+    }
+    return Array.from(list);
+  }, [employees, teams]);
 
   // Attendance for current selected date
   const todayAttendance = useMemo(() => {
@@ -146,7 +196,7 @@ export default function EquipesPage() {
     return { label: "Sem registro", color: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300" };
   };
 
-  // Employees already assigned to any team on this date
+  // Employees already assigned to any team on this date (excluding hidden teams from count if hidden not shown)
   const assignedEmpIds = useMemo(() => {
     const ids = new Set<string>();
     teams.forEach((t) => {
@@ -162,6 +212,8 @@ export default function EquipesPage() {
 
   // Metrics
   const totalTeams = teams.length;
+  const hiddenTeamsCount = teams.filter((t) => t.is_hidden).length;
+  const visibleTeamsCount = teams.filter((t) => !t.is_hidden).length;
   const totalAllocated = assignedEmpIds.size;
   const completedCount = teams.filter((t) => t.status === "concluida").length;
   const pendingOrProgressCount = totalTeams - completedCount;
@@ -169,6 +221,9 @@ export default function EquipesPage() {
   // Filtered teams list
   const filteredTeams = useMemo(() => {
     return teams.filter((team) => {
+      // Ocultar equipes se showHidden for false
+      if (!showHidden && team.is_hidden) return false;
+
       if (statusFilter !== "todos" && team.status !== statusFilter) return false;
       if (!searchTerm) return true;
       const lower = searchTerm.toLowerCase();
@@ -179,6 +234,9 @@ export default function EquipesPage() {
       if (team.task_description.toLowerCase().includes(lower)) return true;
       // Match location
       if (team.location?.toLowerCase().includes(lower)) return true;
+      // Match engineer or supervisor
+      if (team.engineer_name?.toLowerCase().includes(lower)) return true;
+      if (team.supervisor_name?.toLowerCase().includes(lower)) return true;
       // Match member names
       const hasMember = team.employee_ids.some((id) => {
         const emp = employees.find((e) => e.id === id);
@@ -190,7 +248,41 @@ export default function EquipesPage() {
       });
       return hasMember;
     });
-  }, [teams, statusFilter, searchTerm, employees]);
+  }, [teams, showHidden, statusFilter, searchTerm, employees]);
+
+  // Grouped by Hierarchy (Engenheiro ➔ Encarregado)
+  const groupedHierarchy = useMemo(() => {
+    const groups: Record<
+      string,
+      {
+        key: string;
+        engineer: string;
+        supervisor: string;
+        teams: DailyTeam[];
+        totalWorkers: number;
+      }
+    > = {};
+
+    filteredTeams.forEach((t) => {
+      const eng = t.engineer_name?.trim() || "Sem Engenheiro Atribuído";
+      const sup = t.supervisor_name?.trim() || "Sem Encarregado Atribuído";
+      const key = `${eng} — ${sup}`;
+
+      if (!groups[key]) {
+        groups[key] = {
+          key,
+          engineer: eng,
+          supervisor: sup,
+          teams: [],
+          totalWorkers: 0,
+        };
+      }
+      groups[key].teams.push(t);
+      groups[key].totalWorkers += t.employee_ids.length;
+    });
+
+    return Object.values(groups);
+  }, [filteredTeams]);
 
   // Format Brazilian date string
   const formattedDateTitle = useMemo(() => {
@@ -234,6 +326,10 @@ export default function EquipesPage() {
     setLocation("");
     setTeamStatus("em_andamento");
     setNotes("");
+    setIsHidden(false);
+    setEngineerName("");
+    setSupervisorName("");
+    setParentTeamId("");
     setEmpModalSearch("");
 
     if (presetEmpId) {
@@ -256,6 +352,10 @@ export default function EquipesPage() {
     setLocation(team.location || "");
     setTeamStatus(team.status);
     setNotes(team.notes || "");
+    setIsHidden(Boolean(team.is_hidden));
+    setEngineerName(team.engineer_name || "");
+    setSupervisorName(team.supervisor_name || "");
+    setParentTeamId(team.parent_team_id || "");
     setEmpModalSearch("");
     setDialogOpen(true);
   };
@@ -276,6 +376,10 @@ export default function EquipesPage() {
         location,
         status: teamStatus,
         notes,
+        is_hidden: isHidden,
+        engineer_name: engineerName,
+        supervisor_name: supervisorName,
+        parent_team_id: parentTeamId,
       });
     } else {
       await createTeam({
@@ -286,6 +390,10 @@ export default function EquipesPage() {
         location,
         status: teamStatus,
         notes,
+        is_hidden: isHidden,
+        engineer_name: engineerName,
+        supervisor_name: supervisorName,
+        parent_team_id: parentTeamId,
       });
     }
     setDialogOpen(false);
@@ -309,8 +417,8 @@ export default function EquipesPage() {
   };
 
   const handleCopyToWhatsApp = () => {
-    if (teams.length === 0) {
-      alert("Nenhuma equipe cadastrada para esta data.");
+    if (filteredTeams.length === 0) {
+      alert("Nenhuma equipe encontrada para esta data com os filtros atuais.");
       return;
     }
 
@@ -320,33 +428,60 @@ export default function EquipesPage() {
     let text = `📋 *ESCALA DE EQUIPES & TAREFAS - ${formattedDate}*\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-    teams.forEach((team) => {
-      const memberNames = team.employee_ids
-        .map((id) => {
-          const emp = employees.find((e) => e.id === id);
-          return emp ? `${emp.name} (${emp.role})` : null;
-        })
-        .filter(Boolean)
-        .join(" | ");
+    if (groupByHierarchy) {
+      groupedHierarchy.forEach((group) => {
+        text += `🏗️ *${group.engineer}*  ➔  👷 *${group.supervisor}*\n`;
+        text += `────────────────────\n`;
 
-      const statusEmoji =
-        team.status === "concluida" ? "✅ Concluída" : team.status === "pendente" ? "⏳ Pendente" : "⚡ Em Andamento";
+        group.teams.forEach((team) => {
+          const memberNames = team.employee_ids
+            .map((id) => {
+              const emp = employees.find((e) => e.id === id);
+              return emp ? `${emp.name} (${emp.role})` : null;
+            })
+            .filter(Boolean)
+            .join(" | ");
 
-      text += `🔨 *${team.name}*\n`;
-      text += `👥 *Integrantes:* ${memberNames || "Nenhum"}\n`;
-      text += `📋 *Tarefa:* ${team.task_description || "Não especificada"}\n`;
-      if (team.location) {
-        text += `📍 *Frente / Local:* ${team.location}\n`;
-      }
-      text += `📌 *Status:* ${statusEmoji}\n`;
-      if (team.notes) {
-        text += `💬 *Obs:* ${team.notes}\n`;
-      }
-      text += `\n`;
-    });
+          const statusEmoji =
+            team.status === "concluida" ? "✅ Concluída" : team.status === "pendente" ? "⏳ Pendente" : "⚡ Em Andamento";
+
+          text += `  🔨 *${team.name}* ${team.is_hidden ? "*(Rotina)*" : ""}\n`;
+          text += `  👥 Integrantes: ${memberNames || "Nenhum"}\n`;
+          text += `  📋 Tarefa: ${team.task_description || "Não especificada"}\n`;
+          if (team.location) text += `  📍 Frente: ${team.location}\n`;
+          text += `  📌 Status: ${statusEmoji}\n`;
+          if (team.notes) text += `  💬 Obs: ${team.notes}\n`;
+          text += `\n`;
+        });
+      });
+    } else {
+      filteredTeams.forEach((team) => {
+        const memberNames = team.employee_ids
+          .map((id) => {
+            const emp = employees.find((e) => e.id === id);
+            return emp ? `${emp.name} (${emp.role})` : null;
+          })
+          .filter(Boolean)
+          .join(" | ");
+
+        const statusEmoji =
+          team.status === "concluida" ? "✅ Concluída" : team.status === "pendente" ? "⏳ Pendente" : "⚡ Em Andamento";
+
+        text += `🔨 *${team.name}* ${team.is_hidden ? "*(Rotina)*" : ""}\n`;
+        if (team.engineer_name || team.supervisor_name) {
+          text += `🔗 *Comando:* ${team.engineer_name || "-"} ➔ ${team.supervisor_name || "-"}\n`;
+        }
+        text += `👥 *Integrantes:* ${memberNames || "Nenhum"}\n`;
+        text += `📋 *Tarefa:* ${team.task_description || "Não especificada"}\n`;
+        if (team.location) text += `📍 *Frente / Local:* ${team.location}\n`;
+        text += `📌 *Status:* ${statusEmoji}\n`;
+        if (team.notes) text += `💬 *Obs:* ${team.notes}\n`;
+        text += `\n`;
+      });
+    }
 
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `👷 *Resumo:* ${teams.length} equipe(s) | ${assignedEmpIds.size} trabalhador(es) alocado(s)\n`;
+    text += `👷 *Resumo:* ${filteredTeams.length} equipe(s) | ${totalAllocated} trabalhador(es) alocado(s)\n`;
 
     navigator.clipboard.writeText(text).then(() => {
       setCopiedFeedback(true);
@@ -355,8 +490,8 @@ export default function EquipesPage() {
   };
 
   const handleExportExcel = async () => {
-    if (teams.length === 0) {
-      alert("Nenhuma equipe cadastrada nesta data para exportar.");
+    if (filteredTeams.length === 0) {
+      alert("Nenhuma equipe encontrada nesta data para exportar.");
       return;
     }
 
@@ -368,17 +503,19 @@ export default function EquipesPage() {
       { key: "num", width: 6 },
       { key: "status", width: 16 },
       { key: "team", width: 28 },
+      { key: "hierarchy", width: 30 },
       { key: "members", width: 36 },
       { key: "roles", width: 26 },
       { key: "presence", width: 22 },
       { key: "task", width: 38 },
       { key: "location", width: 26 },
       { key: "notes", width: 26 },
+      { key: "hidden", width: 16 },
     ];
 
     // Linha 1: Título Principal
-    const titleRow = worksheet.addRow(["RELATÓRIO DIÁRIO DE EQUIPES & TAREFAS"]);
-    worksheet.mergeCells("A1:I1");
+    const titleRow = worksheet.addRow(["RELATÓRIO DIÁRIO DE EQUIPES, TAREFAS & RESPONSÁVEIS"]);
+    worksheet.mergeCells("A1:K1");
     titleRow.font = { name: "Arial", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
     titleRow.alignment = { horizontal: "center", vertical: "middle" };
     titleRow.height = 32;
@@ -393,18 +530,18 @@ export default function EquipesPage() {
     const formattedDate = `${d}/${m}/${y}`;
     const nowTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const subRow = worksheet.addRow([
-      `Data da Escala: ${formattedDate} (${formattedDateTitle})  |  Gerado em: ${new Date().toLocaleDateString("pt-BR")} às ${nowTime}`,
+      `Data da Escala: ${formattedDate} (${formattedDateTitle})  |  Gerado em: ${new Date().toLocaleDateString("pt-BR")} às ${nowTime} ${showHidden ? "(Incluindo Equipes de Rotina/Ocultas)" : ""}`,
     ]);
-    worksheet.mergeCells("A2:I2");
+    worksheet.mergeCells("A2:K2");
     subRow.font = { name: "Arial", size: 10, italic: true, color: { argb: "FF475569" } };
     subRow.alignment = { horizontal: "center", vertical: "middle" };
     subRow.height = 20;
 
     // Linha 3: Resumo KPIs
     const kpiRow = worksheet.addRow([
-      `Resumo Geral:  ${totalTeams} equipe(s) formadas  |  ${totalAllocated} trabalhador(es) alocados  |  ${completedCount} tarefa(s) concluídas  |  ${pendingOrProgressCount} em andamento / pendentes`,
+      `Resumo Geral:  ${filteredTeams.length} equipe(s) listadas  |  ${totalAllocated} trabalhador(es) alocados  |  ${completedCount} concluída(s)  |  ${pendingOrProgressCount} em andamento/pendentes`,
     ]);
-    worksheet.mergeCells("A3:I3");
+    worksheet.mergeCells("A3:K3");
     kpiRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FF1E293B" } };
     kpiRow.alignment = { horizontal: "center", vertical: "middle" };
     kpiRow.height = 22;
@@ -421,18 +558,20 @@ export default function EquipesPage() {
       "Nº",
       "Status",
       "Nome da Equipe",
+      "Caminho de Comando (Eng. ➔ Encarregado)",
       "Integrantes",
       "Cargos / Funções",
       "Presença Ponto",
       "Tarefa do Dia",
       "Frente / Local",
       "Observações",
+      "Tipo de Equipe",
     ]);
     headerRow.height = 25;
     headerRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
     headerRow.alignment = { horizontal: "center", vertical: "middle" };
 
-    for (let c = 1; c <= 9; c++) {
+    for (let c = 1; c <= 11; c++) {
       const cell = headerRow.getCell(c);
       cell.fill = {
         type: "pattern",
@@ -470,21 +609,29 @@ export default function EquipesPage() {
           ? "Pendente"
           : "Em Andamento";
 
+      const hierarchyStr =
+        team.engineer_name || team.supervisor_name
+          ? `${team.engineer_name || "-"} ➔ ${team.supervisor_name || "-"}`
+          : "-";
+
       const row = worksheet.addRow([
         index + 1,
         statusLabel,
         team.name,
+        hierarchyStr,
         memberNames.join("\n"),
         memberRoles.join("\n"),
         memberPresence.join("\n"),
         team.task_description,
         team.location || "-",
         team.notes || "-",
+        team.is_hidden ? "Rotina / Oculta" : "Diária",
       ]);
 
       row.alignment = { vertical: "middle", wrapText: true };
       row.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
       row.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
+      row.getCell(11).alignment = { horizontal: "center", vertical: "middle" };
 
       // Cor no status
       if (team.status === "concluida") {
@@ -497,7 +644,7 @@ export default function EquipesPage() {
 
       // Fundo zebrado
       const bg = index % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC";
-      for (let c = 1; c <= 9; c++) {
+      for (let c = 1; c <= 11; c++) {
         const cell = row.getCell(c);
         if (!cell.fill) {
           cell.fill = {
@@ -526,6 +673,179 @@ export default function EquipesPage() {
     window.print();
   };
 
+  // Helper renderer for a single team card
+  const renderTeamCard = (team: DailyTeam) => {
+    const config = statusStyles[team.status] || statusStyles.em_andamento;
+    const parentTeam = team.parent_team_id ? teams.find((t) => t.id === team.parent_team_id) : null;
+
+    return (
+      <Card
+        key={team.id}
+        className={`shadow-xs border-l-4 ${config.border} hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between ${
+          team.is_hidden ? "bg-muted/15 border-dashed" : ""
+        }`}
+      >
+        <CardHeader className="p-4 pb-2 space-y-2">
+          {/* Top Bar: Name, Badges & Actions */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-bold text-base text-foreground truncate">{team.name}</h4>
+                {team.is_hidden && (
+                  <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300">
+                    <EyeOff className="h-3 w-3 mr-1" />
+                    Rotina / Oculta
+                  </Badge>
+                )}
+              </div>
+
+              {/* Location */}
+              {team.location && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                  <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span className="font-medium">{team.location}</span>
+                </p>
+              )}
+            </div>
+
+            {/* Quick Status Button */}
+            <button
+              onClick={() => toggleTeamStatus(team.id)}
+              title="Clique para alternar status (Em Andamento -> Concluída -> Pendente)"
+              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border transition-all cursor-pointer shrink-0 ${config.badge}`}
+            >
+              {config.label}
+            </button>
+          </div>
+
+          {/* Hierarchy Trail (Engenheiro ➔ Encarregado) */}
+          {(team.engineer_name || team.supervisor_name || parentTeam) && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] bg-primary/5 dark:bg-primary/10 px-2 py-1 rounded-md border border-primary/20 text-foreground">
+              <GitFork className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span className="font-semibold text-primary">Comando:</span>
+              <span>{team.engineer_name || "Eng. Responsável"}</span>
+              <span className="text-muted-foreground">➔</span>
+              <span className="font-semibold">{team.supervisor_name || "Encarregado"}</span>
+              {parentTeam && (
+                <>
+                  <span className="text-muted-foreground">• Vinculada a:</span>
+                  <span className="font-medium underline">{parentTeam.name}</span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Task Box */}
+          <div className="bg-muted/40 p-2.5 rounded-lg border border-border/50 text-xs">
+            <div className="flex items-start gap-2">
+              <Briefcase className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <span className="font-semibold text-foreground">Tarefa: </span>
+                <span className="text-foreground/90">
+                  {team.task_description || "Sem descrição de tarefa informada."}
+                </span>
+              </div>
+            </div>
+            {team.notes && (
+              <p className="text-[11px] text-muted-foreground mt-1.5 pl-6 italic">
+                Obs: {team.notes}
+              </p>
+            )}
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-4 pt-1 space-y-3">
+          {/* Members List */}
+          <div>
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              Integrantes ({team.employee_ids.length})
+            </p>
+            <div className="space-y-1.5">
+              {team.employee_ids.map((id) => {
+                const emp = employees.find((e) => e.id === id);
+                if (!emp) return null;
+                const att = getEmpAttendanceInfo(emp.id);
+
+                return (
+                  <div
+                    key={id}
+                    className="flex items-center justify-between p-1.5 rounded-md bg-background border text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="h-6 w-6 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-[10px] shrink-0">
+                        {(emp.nickname || emp.name).charAt(0).toUpperCase()}
+                      </div>
+                      <div className="truncate">
+                        <span className="font-semibold text-foreground">
+                          {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name}
+                        </span>
+                        <span className="text-muted-foreground text-[10px] ml-1.5">• {emp.role}</span>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${att.color}`}
+                      title={`Status de ponto em ${date}: ${att.label}`}
+                    >
+                      {att.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Card Footer Actions */}
+          <div className="flex items-center justify-between pt-2 border-t border-border/40 print:hidden">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => toggleTeamStatus(team.id)}
+              className="h-8 text-xs font-medium text-muted-foreground hover:text-foreground gap-1.5"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {team.status === "concluida" ? "Reabrir" : "Concluir"}
+            </Button>
+
+            <div className="flex items-center gap-1">
+              {/* Toggle Hidden Shortcut */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => toggleTeamHidden(team.id)}
+                className={`h-8 w-8 ${
+                  team.is_hidden ? "text-amber-600 hover:text-amber-700" : "text-muted-foreground hover:text-foreground"
+                }`}
+                title={team.is_hidden ? "Equipe oculta na visão diária (clique para reexibir)" : "Ocultar equipe da visão diária (rotina de compras)"}
+              >
+                {team.is_hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleOpenEditDialog(team)}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                title="Editar equipe ou tarefa"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleDelete(team.id, team.name)}
+                className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                title="Excluir equipe"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto print:p-0 print:space-y-4">
       {/* Top Header */}
@@ -535,19 +855,12 @@ export default function EquipesPage() {
             <HardHat className="h-7 w-7 text-primary" />
             Equipes & Tarefas Diárias
           </h1>
-          <p className="text-sm text-muted-foreground capitalize">
-            {formattedDateTitle}
-          </p>
+          <p className="text-sm text-muted-foreground capitalize">{formattedDateTitle}</p>
         </div>
 
         {/* Date Selector Navigation */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setDate(getLocalDateString(-1))}
-            className="text-xs"
-          >
+          <Button variant="outline" size="sm" onClick={() => setDate(getLocalDateString(-1))} className="text-xs">
             Ontem
           </Button>
           <Button
@@ -558,12 +871,7 @@ export default function EquipesPage() {
           >
             Hoje
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setDate(getLocalDateString(1))}
-            className="text-xs"
-          >
+          <Button variant="outline" size="sm" onClick={() => setDate(getLocalDateString(1))} className="text-xs">
             Amanhã
           </Button>
           <div className="relative">
@@ -579,7 +887,7 @@ export default function EquipesPage() {
 
       {/* Print-Only Header */}
       <div className="hidden print:block border-b pb-4 mb-4">
-        <h1 className="text-2xl font-bold">Relatório de Equipes e Tarefas Diárias</h1>
+        <h1 className="text-2xl font-bold">Relatório de Equipes, Tarefas e Responsáveis</h1>
         <p className="text-sm text-gray-600 capitalize">{formattedDateTitle}</p>
       </div>
 
@@ -605,8 +913,8 @@ export default function EquipesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* View Mode Toggle */}
-          <div className="flex items-center border rounded-lg p-0.5 bg-muted/40 mr-1">
+          {/* Toggle View Mode: Cards vs Lista */}
+          <div className="flex items-center border rounded-lg p-0.5 bg-muted/40">
             <button
               type="button"
               onClick={() => changeViewMode("cards")}
@@ -635,6 +943,36 @@ export default function EquipesPage() {
             </button>
           </div>
 
+          {/* Toggle Group by Hierarchy */}
+          <Button
+            variant={groupByHierarchy ? "default" : "outline"}
+            size="sm"
+            onClick={() => setGroupByHierarchy(!groupByHierarchy)}
+            className={`gap-1.5 text-xs h-9 font-medium transition-all ${
+              groupByHierarchy ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
+            }`}
+            title="Agrupar equipes pelo caminho de Engenheiro e Encarregado"
+          >
+            <Network className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Caminho de Comando</span>
+          </Button>
+
+          {/* Toggle Show Hidden Teams */}
+          <Button
+            variant={showHidden ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowHidden(!showHidden)}
+            className={`gap-1.5 text-xs h-9 font-medium transition-all ${
+              showHidden
+                ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900"
+                : "text-muted-foreground"
+            }`}
+            title="Exibir ou ocultar equipes fixas/rotineiras (ex: compras)"
+          >
+            {showHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            {showHidden ? "Ocultar Rotina" : `Ver Ocultas (${hiddenTeamsCount})`}
+          </Button>
+
           <Button
             variant="outline"
             onClick={handleExportExcel}
@@ -642,7 +980,7 @@ export default function EquipesPage() {
             title="Exportar dados para planilha Excel (.xlsx)"
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-            Exportar Excel
+            Excel
           </Button>
 
           <Button
@@ -665,11 +1003,7 @@ export default function EquipesPage() {
             )}
           </Button>
 
-          <Button
-            variant="outline"
-            onClick={handlePrint}
-            className="gap-2 text-xs md:text-sm"
-          >
+          <Button variant="outline" onClick={handlePrint} className="gap-2 text-xs md:text-sm">
             <Printer className="h-4 w-4 text-muted-foreground" />
             Imprimir
           </Button>
@@ -690,8 +1024,13 @@ export default function EquipesPage() {
         <Card className="shadow-xs">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Equipes Formadas</p>
-              <h3 className="text-2xl font-bold mt-1">{totalTeams}</h3>
+              <p className="text-xs font-medium text-muted-foreground">Equipes Ativas</p>
+              <h3 className="text-2xl font-bold mt-1">
+                {visibleTeamsCount}{" "}
+                {hiddenTeamsCount > 0 && (
+                  <span className="text-xs font-normal text-muted-foreground">({hiddenTeamsCount} oculta{hiddenTeamsCount > 1 ? "s" : ""})</span>
+                )}
+              </h3>
             </div>
             <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
               <Users className="h-5 w-5" />
@@ -745,7 +1084,7 @@ export default function EquipesPage() {
             <div className="relative flex-1 w-full">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por funcionário, equipe ou tarefa..."
+                placeholder="Buscar por funcionário, equipe, encarregado, engenheiro ou tarefa..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9 h-9 text-xs"
@@ -767,177 +1106,126 @@ export default function EquipesPage() {
 
           {/* Teams Display */}
           {isLoading && teams.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground text-sm">
-              Carregando equipes...
-            </div>
+            <div className="py-12 text-center text-muted-foreground text-sm">Carregando equipes...</div>
           ) : filteredTeams.length === 0 ? (
             <Card className="border-dashed p-8 text-center space-y-3">
               <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mx-auto text-muted-foreground">
                 <Users className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-semibold">Nenhuma equipe formada para este dia</h3>
+              <h3 className="text-base font-semibold">Nenhuma equipe encontrada para os filtros atuais</h3>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                Crie duplas ou grupos com os funcionários cadastrados e atribua a tarefa do dia.
+                {hiddenTeamsCount > 0 && !showHidden
+                  ? `Existem ${hiddenTeamsCount} equipe(s) oculta(s) nesta data. Clique em "Ver Ocultas" acima para exibi-las.`
+                  : "Crie duplas ou grupos com os funcionários cadastrados e atribua a tarefa do dia."}
               </p>
               <div className="pt-2 flex justify-center gap-2">
                 <Button size="sm" onClick={() => handleOpenNewDialog()}>
                   <Plus className="h-4 w-4 mr-1" />
                   Criar Primeira Equipe
                 </Button>
-                <Button size="sm" variant="outline" onClick={handleCloneYesterday}>
-                  <RotateCcw className="h-4 w-4 mr-1" />
-                  Repetir de Ontem
-                </Button>
+                {hiddenTeamsCount > 0 && !showHidden && (
+                  <Button size="sm" variant="outline" onClick={() => setShowHidden(true)}>
+                    <Eye className="h-4 w-4 mr-1" />
+                    Exibir Ocultas ({hiddenTeamsCount})
+                  </Button>
+                )}
               </div>
             </Card>
-          ) : viewMode === "cards" ? (
-            /* CARDS VIEW */
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredTeams.map((team) => {
-                const config = statusStyles[team.status] || statusStyles.em_andamento;
-
-                return (
-                  <Card
-                    key={team.id}
-                    className={`shadow-xs border-l-4 ${config.border} hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between`}
-                  >
-                    <CardHeader className="p-4 pb-2 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <h4 className="font-bold text-base text-foreground flex items-center gap-2">
-                            {team.name}
-                          </h4>
-                          {team.location && (
-                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                              <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
-                              <span className="font-medium">{team.location}</span>
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Status Toggle Button */}
-                        <button
-                          onClick={() => toggleTeamStatus(team.id)}
-                          title="Clique para alternar status (Em Andamento -> Concluída -> Pendente)"
-                          className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border transition-all cursor-pointer ${config.badge}`}
-                        >
-                          {config.label}
-                        </button>
+          ) : groupByHierarchy ? (
+            /* HIERARCHY GROUPED VIEW (Engenheiro ➔ Encarregado ➔ Equipes) */
+            <div className="space-y-6">
+              {groupedHierarchy.map((group) => (
+                <div key={group.key} className="space-y-3 border rounded-xl p-4 bg-muted/15 shadow-xs">
+                  {/* Group Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                        <Network className="h-5 w-5" />
                       </div>
-
-                      {/* Task Box */}
-                      <div className="bg-muted/40 p-2.5 rounded-lg border border-border/50 text-xs">
-                        <div className="flex items-start gap-2">
-                          <Briefcase className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                          <div className="flex-1">
-                            <span className="font-semibold text-foreground">Tarefa: </span>
-                            <span className="text-foreground/90">
-                              {team.task_description || "Sem descrição de tarefa informada."}
-                            </span>
-                          </div>
-                        </div>
-                        {team.notes && (
-                          <p className="text-[11px] text-muted-foreground mt-1.5 pl-6 italic">
-                            Obs: {team.notes}
-                          </p>
-                        )}
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="p-4 pt-1 space-y-3">
-                      {/* Members List */}
                       <div>
-                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                          Integrantes ({team.employee_ids.length})
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-foreground text-sm sm:text-base">
+                            {group.engineer}
+                          </span>
+                          <span className="text-muted-foreground">➔</span>
+                          <span className="font-semibold text-primary text-sm sm:text-base">
+                            {group.supervisor}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {group.teams.length} equipe{group.teams.length !== 1 ? "s" : ""} vinculada{group.teams.length !== 1 ? "s" : ""} • {group.totalWorkers} trabalhadores sob este comando
                         </p>
-                        <div className="space-y-1.5">
-                          {team.employee_ids.map((id) => {
-                            const emp = employees.find((e) => e.id === id);
-                            if (!emp) return null;
-                            const att = getEmpAttendanceInfo(emp.id);
+                      </div>
+                    </div>
+                  </div>
 
-                            return (
-                              <div
-                                key={id}
-                                className="flex items-center justify-between p-1.5 rounded-md bg-background border text-xs"
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <div className="h-6 w-6 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-[10px] shrink-0">
-                                    {(emp.nickname || emp.name).charAt(0).toUpperCase()}
-                                  </div>
-                                  <div className="truncate">
-                                    <span className="font-semibold text-foreground">
-                                      {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name}
-                                    </span>
-                                    <span className="text-muted-foreground text-[10px] ml-1.5">
-                                      • {emp.role}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <span
-                                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${att.color}`}
-                                  title={`Status de ponto em ${date}: ${att.label}`}
+                  {/* Group Teams */}
+                  {viewMode === "cards" ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      {group.teams.map((team) => renderTeamCard(team))}
+                    </div>
+                  ) : (
+                    <div className="divide-y border rounded-lg overflow-hidden bg-background">
+                      {group.teams.map((team) => {
+                        const config = statusStyles[team.status] || statusStyles.em_andamento;
+                        return (
+                          <div key={team.id} className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-muted/30">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-sm text-foreground">{team.name}</span>
+                                <button
+                                  onClick={() => toggleTeamStatus(team.id)}
+                                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border cursor-pointer ${config.badge}`}
                                 >
-                                  {att.label}
-                                </span>
+                                  {config.label}
+                                </button>
+                                {team.is_hidden && (
+                                  <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">Rotina</span>
+                                )}
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Card Footer Actions */}
-                      <div className="flex items-center justify-between pt-2 border-t border-border/40 print:hidden">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleTeamStatus(team.id)}
-                          className="h-8 text-xs font-medium text-muted-foreground hover:text-foreground gap-1.5"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          {team.status === "concluida" ? "Reabrir" : "Concluir"}
-                        </Button>
-
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenEditDialog(team)}
-                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                            title="Editar equipe ou tarefa"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(team.id, team.name)}
-                            className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                            title="Excluir equipe"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                              <p className="text-xs text-foreground/90 mt-1">
+                                <span className="font-semibold">Tarefa:</span> {team.task_description || "-"}
+                                {team.location && <span className="text-muted-foreground ml-2">📍 {team.location}</span>}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0 print:hidden">
+                              <Button variant="ghost" size="icon" onClick={() => toggleTeamHidden(team.id)} className="h-7 w-7 text-muted-foreground">
+                                {team.is_hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => handleOpenEditDialog(team)} className="h-7 w-7 text-muted-foreground">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => handleDelete(team.id, team.name)} className="h-7 w-7 text-destructive hover:bg-destructive/10">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : viewMode === "cards" ? (
+            /* STANDARD CARDS VIEW */
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredTeams.map((team) => renderTeamCard(team))}
             </div>
           ) : (
-            /* LISTA / TABELA VIEW */
+            /* STANDARD LISTA / TABELA VIEW */
             <Card className="shadow-xs overflow-hidden border">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-muted/70 border-b text-muted-foreground font-semibold">
                       <th className="py-3 px-3 w-28">Status</th>
-                      <th className="py-3 px-3 w-48">Equipe</th>
-                      <th className="py-3 px-3 min-w-[220px]">Integrantes & Funções</th>
-                      <th className="py-3 px-3 min-w-[200px]">Tarefa do Dia</th>
-                      <th className="py-3 px-3 w-36">Local / Frente</th>
-                      <th className="py-3 px-3 w-24 text-right print:hidden">Ações</th>
+                      <th className="py-3 px-3 w-44">Equipe</th>
+                      <th className="py-3 px-3 min-w-[190px]">Caminho de Comando</th>
+                      <th className="py-3 px-3 min-w-[210px]">Integrantes & Funções</th>
+                      <th className="py-3 px-3 min-w-[190px]">Tarefa do Dia</th>
+                      <th className="py-3 px-3 w-32">Local / Frente</th>
+                      <th className="py-3 px-3 w-28 text-right print:hidden">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
@@ -947,7 +1235,9 @@ export default function EquipesPage() {
                       return (
                         <tr
                           key={team.id}
-                          className="hover:bg-muted/30 transition-colors align-top"
+                          className={`hover:bg-muted/30 transition-colors align-top ${
+                            team.is_hidden ? "bg-muted/15 opacity-80" : ""
+                          }`}
                         >
                           {/* Status */}
                           <td className="py-3 px-3 whitespace-nowrap">
@@ -958,6 +1248,13 @@ export default function EquipesPage() {
                             >
                               {config.label}
                             </button>
+                            {team.is_hidden && (
+                              <div className="mt-1">
+                                <span className="text-[9px] bg-slate-100 text-slate-700 px-1 py-0.5 rounded border border-slate-300">
+                                  Rotina
+                                </span>
+                              </div>
+                            )}
                           </td>
 
                           {/* Team Name */}
@@ -968,6 +1265,25 @@ export default function EquipesPage() {
                             <span className="text-[10px] text-muted-foreground">
                               {team.employee_ids.length} trabalhador{team.employee_ids.length !== 1 ? "es" : ""}
                             </span>
+                          </td>
+
+                          {/* Hierarchy */}
+                          <td className="py-3 px-3">
+                            {team.engineer_name || team.supervisor_name ? (
+                              <div className="text-[11px] space-y-0.5">
+                                <div className="font-medium text-foreground">
+                                  {team.engineer_name || "-"}
+                                </div>
+                                <div className="text-muted-foreground flex items-center gap-1">
+                                  <span>➔</span>
+                                  <span className="font-semibold text-primary">
+                                    {team.supervisor_name || "-"}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground italic">-</span>
+                            )}
                           </td>
 
                           {/* Integrantes */}
@@ -987,9 +1303,7 @@ export default function EquipesPage() {
                                       <span className="font-semibold text-foreground">
                                         {emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name}
                                       </span>
-                                      <span className="text-muted-foreground text-[10px]">
-                                        • {emp.role}
-                                      </span>
+                                      <span className="text-muted-foreground text-[10px]">• {emp.role}</span>
                                     </div>
                                     <span
                                       className={`text-[9px] font-medium px-1.5 py-0.2 rounded shrink-0 ${att.color}`}
@@ -1030,6 +1344,17 @@ export default function EquipesPage() {
                           {/* Ações */}
                           <td className="py-3 px-3 text-right whitespace-nowrap print:hidden">
                             <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => toggleTeamHidden(team.id)}
+                                className={`h-7 w-7 ${
+                                  team.is_hidden ? "text-amber-600 hover:text-amber-700" : "text-muted-foreground hover:text-foreground"
+                                }`}
+                                title={team.is_hidden ? "Reexibir equipe na visão diária" : "Ocultar equipe da visão diária"}
+                              >
+                                {team.is_hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1164,6 +1489,114 @@ export default function EquipesPage() {
               />
             </div>
 
+            {/* Hierarchy & Responsibility Chain (Engenheiro & Encarregado) */}
+            <div className="p-3 rounded-lg border bg-muted/20 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <GitFork className="h-4 w-4 text-primary" />
+                Caminho de Responsáveis (Cadeia de Comando)
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Engenheiro Responsável */}
+                <div className="space-y-1">
+                  <Label htmlFor="engName" className="text-[11px] font-medium text-muted-foreground">
+                    Engenheiro Responsável
+                  </Label>
+                  <Input
+                    id="engName"
+                    value={engineerName}
+                    onChange={(e) => setEngineerName(e.target.value)}
+                    placeholder="Ex: Engenheiro 01 ou Eng. Carlos"
+                    className="h-8 text-xs"
+                  />
+                  {engineerSuggestions.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {engineerSuggestions.slice(0, 3).map((eng) => (
+                        <span
+                          key={eng}
+                          onClick={() => setEngineerName(eng)}
+                          className="text-[10px] bg-background hover:bg-primary/10 border px-1.5 py-0.5 rounded cursor-pointer text-muted-foreground hover:text-foreground"
+                        >
+                          {eng}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Encarregado / Mestre Responsável */}
+                <div className="space-y-1">
+                  <Label htmlFor="supName" className="text-[11px] font-medium text-muted-foreground">
+                    Encarregado / Mestre Responsável
+                  </Label>
+                  <Input
+                    id="supName"
+                    value={supervisorName}
+                    onChange={(e) => setSupervisorName(e.target.value)}
+                    placeholder="Ex: Encarregado 01 ou Mestre João"
+                    className="h-8 text-xs"
+                  />
+                  {supervisorSuggestions.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {supervisorSuggestions.slice(0, 3).map((sup) => (
+                        <span
+                          key={sup}
+                          onClick={() => setSupervisorName(sup)}
+                          className="text-[10px] bg-background hover:bg-primary/10 border px-1.5 py-0.5 rounded cursor-pointer text-muted-foreground hover:text-foreground"
+                        >
+                          {sup}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Equipe Pai / Vinculada (opcional) */}
+              {teams.length > 0 && (
+                <div className="space-y-1 pt-1 border-t border-border/40">
+                  <Label htmlFor="parentTeam" className="text-[11px] font-medium text-muted-foreground">
+                    Equipe Líder / Frente Superior (opcional)
+                  </Label>
+                  <select
+                    id="parentTeam"
+                    value={parentTeamId}
+                    onChange={(e) => setParentTeamId(e.target.value)}
+                    className="w-full h-8 px-2.5 rounded-md border border-input bg-background text-xs font-medium focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="">Nenhuma (Equipe independente)</option>
+                    {teams
+                      .filter((t) => t.id !== editingTeamId)
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.task_description || "Sem tarefa"})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Checkbox: Ocultar da visão diária */}
+            <div className="flex items-start gap-2.5 p-2.5 rounded-lg border bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50">
+              <input
+                type="checkbox"
+                id="isHiddenCheck"
+                checked={isHidden}
+                onChange={(e) => setIsHidden(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+              />
+              <div className="flex-1 cursor-pointer" onClick={() => setIsHidden(!isHidden)}>
+                <label htmlFor="isHiddenCheck" className="text-xs font-semibold text-foreground cursor-pointer flex items-center gap-1.5">
+                  <EyeOff className="h-3.5 w-3.5 text-amber-600" />
+                  Ocultar da visualização diária padrão
+                </label>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Ideal para equipes com rotina contínua/fixa (como Compras, Almoxarifado, Transporte) que não precisam poluir a escala diária da obra.
+                </p>
+              </div>
+            </div>
+
             {/* Employee Selection */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1185,7 +1618,7 @@ export default function EquipesPage() {
               </div>
 
               {/* Employee Selection Grid */}
-              <div className="border rounded-lg p-2 max-h-48 overflow-y-auto space-y-1.5 bg-muted/20">
+              <div className="border rounded-lg p-2 max-h-44 overflow-y-auto space-y-1.5 bg-muted/20">
                 {activeEmployees
                   .filter((emp) => {
                     if (!empModalSearch) return true;
@@ -1214,20 +1647,16 @@ export default function EquipesPage() {
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={() => {}} // Handled by div click
+                            onChange={() => {}}
                             className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary pointer-events-none"
                           />
                           <div className="truncate">
                             <span>{emp.nickname ? `${emp.name} (${emp.nickname})` : emp.name}</span>
-                            <span className="text-[11px] text-muted-foreground ml-1.5 font-normal">
-                              • {emp.role}
-                            </span>
+                            <span className="text-[11px] text-muted-foreground ml-1.5 font-normal">• {emp.role}</span>
                           </div>
                         </div>
 
-                        <span
-                          className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${att.color}`}
-                        >
+                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${att.color}`}>
                           {att.label}
                         </span>
                       </div>
@@ -1246,15 +1675,13 @@ export default function EquipesPage() {
                 rows={2}
                 value={taskDescription}
                 onChange={(e) => setTaskDescription(e.target.value)}
-                placeholder="Ex: Reboco do 2º pavimento, passagem de conduítes, assentamento de blocos..."
+                placeholder="Ex: Reboco do 2º pavimento, passagem de conduítes, compras de insumos..."
                 className="w-full text-xs p-2.5 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
               />
 
               {/* Task Quick Presets */}
               <div className="flex flex-wrap gap-1.5 pt-1">
-                <span className="text-[10px] text-muted-foreground font-medium self-center mr-1">
-                  Atalhos:
-                </span>
+                <span className="text-[10px] text-muted-foreground font-medium self-center mr-1">Atalhos:</span>
                 {TASK_PRESETS.map((preset) => (
                   <Badge
                     key={preset}
@@ -1315,7 +1742,7 @@ export default function EquipesPage() {
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Ex: Aguardando chegada de argamassa às 14h"
+                placeholder="Ex: Aguardando chegada de material às 14h"
                 className="h-9 text-xs"
               />
             </div>

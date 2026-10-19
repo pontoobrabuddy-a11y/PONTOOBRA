@@ -12,6 +12,10 @@ export interface DailyTeam {
   location?: string;
   status: DailyTeamStatus;
   notes?: string;
+  is_hidden?: boolean; // Ocultar da visão diária padrão (equipes fixas/rotineiras como compras)
+  engineer_name?: string; // Engenheiro Responsável
+  supervisor_name?: string; // Encarregado / Mestre Responsável
+  parent_team_id?: string; // Equipe Líder / Frente Vinculada (opcional)
   created_at?: string;
   updated_at?: string;
 }
@@ -26,6 +30,7 @@ interface DailyTeamsState {
   deleteTeam: (id: string) => Promise<void>;
   cloneTeamsFromDate: (sourceDate: string, targetDate: string) => Promise<number>;
   toggleTeamStatus: (id: string) => Promise<void>;
+  toggleTeamHidden: (id: string) => Promise<void>;
 }
 
 const LOCAL_STORAGE_KEY = 'ponto_daily_teams_cache_v1';
@@ -86,6 +91,10 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
         location: row.location || '',
         status: (row.status as DailyTeamStatus) || 'em_andamento',
         notes: row.notes || '',
+        is_hidden: Boolean(row.is_hidden),
+        engineer_name: row.engineer_name || '',
+        supervisor_name: row.supervisor_name || '',
+        parent_team_id: row.parent_team_id || '',
         created_at: row.created_at,
         updated_at: row.updated_at,
       }));
@@ -109,6 +118,10 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
     const newTeam: DailyTeam = {
       ...teamData,
       id: tempId,
+      is_hidden: Boolean(teamData.is_hidden),
+      engineer_name: teamData.engineer_name || '',
+      supervisor_name: teamData.supervisor_name || '',
+      parent_team_id: teamData.parent_team_id || '',
       created_at: now,
       updated_at: now,
     };
@@ -135,6 +148,10 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
           location: teamData.location || '',
           status: teamData.status || 'em_andamento',
           notes: teamData.notes || '',
+          is_hidden: Boolean(teamData.is_hidden),
+          engineer_name: teamData.engineer_name || '',
+          supervisor_name: teamData.supervisor_name || '',
+          parent_team_id: teamData.parent_team_id || '',
         }])
         .select()
         .single();
@@ -149,6 +166,10 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
           location: data.location || '',
           status: (data.status as DailyTeamStatus) || 'em_andamento',
           notes: data.notes || '',
+          is_hidden: Boolean(data.is_hidden),
+          engineer_name: data.engineer_name || '',
+          supervisor_name: data.supervisor_name || '',
+          parent_team_id: data.parent_team_id || '',
           created_at: data.created_at,
           updated_at: data.updated_at,
         };
@@ -183,6 +204,10 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
       if (updates.location !== undefined) payload.location = updates.location;
       if (updates.status !== undefined) payload.status = updates.status;
       if (updates.notes !== undefined) payload.notes = updates.notes;
+      if (updates.is_hidden !== undefined) payload.is_hidden = updates.is_hidden;
+      if (updates.engineer_name !== undefined) payload.engineer_name = updates.engineer_name;
+      if (updates.supervisor_name !== undefined) payload.supervisor_name = updates.supervisor_name;
+      if (updates.parent_team_id !== undefined) payload.parent_team_id = updates.parent_team_id;
 
       await supabase.from('daily_teams').update(payload).eq('id', id);
     } catch (err) {
@@ -206,7 +231,6 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
   },
 
   cloneTeamsFromDate: async (sourceDate: string, targetDate: string) => {
-    // Look up teams for sourceDate
     let sourceTeams: DailyTeam[] = [];
     try {
       const supabase = createClient();
@@ -221,6 +245,10 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
           location: r.location || '',
           status: 'em_andamento' as DailyTeamStatus,
           notes: r.notes || '',
+          is_hidden: Boolean(r.is_hidden),
+          engineer_name: r.engineer_name || '',
+          supervisor_name: r.supervisor_name || '',
+          parent_team_id: r.parent_team_id || '',
         }));
       }
     } catch {
@@ -246,6 +274,10 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
         location: st.location || '',
         status: 'em_andamento',
         notes: st.notes || '',
+        is_hidden: Boolean(st.is_hidden),
+        engineer_name: st.engineer_name || '',
+        supervisor_name: st.supervisor_name || '',
+        parent_team_id: st.parent_team_id || '',
       });
       clonedCount++;
     }
@@ -263,5 +295,11 @@ export const useDailyTeams = create<DailyTeamsState>()((set, get) => ({
     else if (team.status === 'pendente') nextStatus = 'em_andamento';
 
     await get().updateTeam(id, { status: nextStatus });
+  },
+
+  toggleTeamHidden: async (id: string) => {
+    const team = get().teams.find(t => t.id === id);
+    if (!team) return;
+    await get().updateTeam(id, { is_hidden: !team.is_hidden });
   },
 }));

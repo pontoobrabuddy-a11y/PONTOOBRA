@@ -1,4 +1,4 @@
--- Tabela para o Módulo de Equipes & Tarefas Diárias
+-- Tabela para o Módulo de Equipes & Tarefas Diárias (Completa)
 CREATE TABLE IF NOT EXISTS public.daily_teams (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     date DATE NOT NULL,
@@ -8,9 +8,19 @@ CREATE TABLE IF NOT EXISTS public.daily_teams (
     location TEXT DEFAULT '',
     status TEXT NOT NULL DEFAULT 'em_andamento',
     notes TEXT DEFAULT '',
+    is_hidden BOOLEAN DEFAULT false,
+    engineer_name TEXT DEFAULT '',
+    supervisor_name TEXT DEFAULT '',
+    parent_team_id TEXT DEFAULT '',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Se você já criou a tabela antes, rode estes comandos para adicionar os novos campos:
+ALTER TABLE public.daily_teams ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT false;
+ALTER TABLE public.daily_teams ADD COLUMN IF NOT EXISTS engineer_name TEXT DEFAULT '';
+ALTER TABLE public.daily_teams ADD COLUMN IF NOT EXISTS supervisor_name TEXT DEFAULT '';
+ALTER TABLE public.daily_teams ADD COLUMN IF NOT EXISTS parent_team_id TEXT DEFAULT '';
 
 -- Ativar Row Level Security (RLS)
 ALTER TABLE public.daily_teams ENABLE ROW LEVEL SECURITY;

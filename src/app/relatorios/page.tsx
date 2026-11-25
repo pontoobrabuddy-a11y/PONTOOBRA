@@ -1,15 +1,33 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useStore } from "@/store/useStore";
+import { useStore, calculateMonthDsr } from "@/store/useStore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, FileText, Search, LayoutGrid, List, ArrowUpDown, MessageSquare } from "lucide-react";
+import { Download, FileText, Search, LayoutGrid, List, ArrowUpDown } from "lucide-react";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+
+const DEFAULT_SALARY_MAPPINGS = [
+  { liquid: 1800, gross: 1951.30 },
+  { liquid: 1870, gross: 2028.22 },
+  { liquid: 1900, gross: 2061.19 },
+  { liquid: 2000, gross: 2171.08 },
+  { liquid: 2100, gross: 2280.97 },
+  { liquid: 2200, gross: 2390.86 },
+  { liquid: 2500, gross: 2720.53 },
+  { liquid: 2600, gross: 2830.42 },
+  { liquid: 2900, gross: 3168.86 },
+  { liquid: 3000, gross: 3282.50 },
+  { liquid: 3190, gross: 3498.41 },
+  { liquid: 3200, gross: 3509.77 },
+  { liquid: 3500, gross: 3850.68 },
+  { liquid: 4000, gross: 4420.36 },
+  { liquid: 4500, gross: 5003.02 },
+];
 
 interface HoveredCellInfo {
   empName: string;
@@ -17,19 +35,43 @@ interface HoveredCellInfo {
   statusLabel: string;
   statusShort: string;
   observation: string;
+  dsrNote?: string;
   x: number;
   y: number;
 }
 
 export default function RelatoriosPage() {
   const { employees, attendance, payments } = useStore();
-  const [salaryMappings, setSalaryMappings] = useState<{liquid: number, gross: number}[]>([]);
+  const [salaryMappings, setSalaryMappings] = useState<{liquid: number, gross: number}[]>(DEFAULT_SALARY_MAPPINGS);
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem("salary_mappings");
-      if (saved) setSalaryMappings(JSON.parse(saved));
-    } catch(e) {}
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Merge default mappings with saved custom mappings (saved takes precedence)
+          const merged = [...DEFAULT_SALARY_MAPPINGS];
+          parsed.forEach((item: { liquid: number; gross: number }) => {
+            const idx = merged.findIndex(m => Math.abs(m.liquid - item.liquid) < 0.01);
+            if (idx >= 0) {
+              merged[idx] = item;
+            } else {
+              merged.push(item);
+            }
+          });
+          setSalaryMappings(merged);
+        }
+      }
+    } catch (e) {}
   }, []);
+
+  const getBaseGrossSalary = (liquid: number) => {
+    if (liquid <= 0) return 0;
+    const match = salaryMappings.find(m => Math.abs(m.liquid - liquid) < 0.01);
+    return match ? match.gross : liquid * 1.084;
+  };
+
   const [searchTerm, setSearchTerm] = useState("");
   const [companyFilter, setCompanyFilter] = useState<'TODOS' | 'BUDDY' | 'CASANA'>('TODOS');
   const [sortBy, setSortBy] = useState<'number' | 'name'>('number');
@@ -57,6 +99,54 @@ export default function RelatoriosPage() {
     if (status === 'half_presence') return { label: 'Meia Presença', short: 'M' };
     if (status === 'suspension') return { label: 'Suspensão', short: 'S' };
     return { label: 'Sem registro', short: '' };
+  };
+
+  // Helper to compute the 3 salary values for an employee in the selected month
+  const getEmployeeMonthFinancials = (emp: typeof employees[number], totalDsr: number, totalFaltas: number) => {
+    const liquidoContratual = emp.salary || 0;
+    const salarioFamiliaVal = emp.salary_family ? 67.54 : 0;
+    const baseBruto = getBaseGrossSalary(liquidoContratual);
+    const salarioBruto = liquidoContratual > 0 ? baseBruto + salarioFamiliaVal : 0;
+
+    const empPayments = payments.filter(
+      p => p.employee_id === emp.id && p.period_month === month + 1 && p.period_year === year
+    );
+    const paidPayments = empPayments.filter(p => p.paid);
+    let liquidoPagoMes = paidPayments.reduce((acc, p) => acc + p.net_amount, 0);
+
+    if (paidPayments.length > 0) {
+      // Se o funcionário recebe salário família e os pagamentos foram gravados antes sem os R$ 67,54:
+      if (emp.salary_family) {
+        const hasQ1 = paidPayments.some(p => p.payment_type === 'quinzena1');
+        const hasQ2 = paidPayments.some(p => p.payment_type === 'quinzena2');
+        const hasMensal = paidPayments.some(p => p.payment_type === 'mensal');
+        const maxGrossRecorded = Math.max(...paidPayments.map(p => p.gross_amount || 0));
+
+        // Se pagou as duas quinzenas (ou mensal) exatamente sobre o salário base sem os 67,54
+        if ((hasQ1 && hasQ2 || hasMensal) && maxGrossRecorded <= liquidoContratual + 0.01 && liquidoPagoMes <= liquidoContratual + 0.01) {
+          liquidoPagoMes += 67.54;
+        } else if ((hasQ1 && !hasQ2) && Math.abs(liquidoPagoMes - liquidoContratual / 2) < 0.05) {
+          liquidoPagoMes += 33.77;
+        }
+      }
+
+      // Se houver desconto de DSR marcado no mês que ainda não havia sido abatido do pagamento salvo:
+      if (totalDsr > 0 && baseBruto > 0) {
+        const expectedMaxAfterDsr = (liquidoContratual + salarioFamiliaVal) - ((totalFaltas + totalDsr) * (baseBruto / 30));
+        if (liquidoPagoMes > expectedMaxAfterDsr + 0.5) {
+          const dsrDiscountValue = totalDsr * (baseBruto / 30);
+          liquidoPagoMes = Math.max(0, liquidoPagoMes - dsrDiscountValue);
+        }
+      }
+    }
+
+    return {
+      liquidoContratual,
+      liquidoPagoMes,
+      salarioBruto,
+      baseBruto,
+      salarioFamiliaVal,
+    };
   };
 
   // Calculate aggregated data for the selected month
@@ -102,6 +192,8 @@ export default function RelatoriosPage() {
         }
       }
 
+      const dsrInfo = calculateMonthDsr(attendance, emp.id, year, month + 1);
+
       return {
         ...emp,
         presences,
@@ -110,6 +202,7 @@ export default function RelatoriosPage() {
         justified,
         suspensions,
         monthObservations,
+        dsrInfo,
       };
     });
   }, [employees, attendance, monthStr, daysInMonth, year, month]);
@@ -160,8 +253,8 @@ export default function RelatoriosPage() {
       columns.push({ header: "", key: `day_${date.getDate()}`, width: 5.5 });
     });
 
-    columns.push({ header: "", key: "faltas", width: 12 });
-    columns.push({ header: "", key: "observacoes", width: 45 });
+    columns.push({ header: "", key: "faltas", width: 14 });
+    columns.push({ header: "", key: "dsr", width: 12 });
     
     worksheet.columns = columns as any;
 
@@ -191,16 +284,16 @@ export default function RelatoriosPage() {
     });
 
     const faltasHeader1 = headerRow1.getCell(days.length + 8);
-    faltasHeader1.value = "TOTAL";
+    faltasHeader1.value = "RESUMO";
     faltasHeader1.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Calibri' };
     faltasHeader1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
     faltasHeader1.alignment = { horizontal: 'center', vertical: 'middle' };
 
-    const obsHeader1 = headerRow1.getCell(days.length + 9);
-    obsHeader1.value = "HISTÓRICO";
-    obsHeader1.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Calibri' };
-    obsHeader1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
-    obsHeader1.alignment = { horizontal: 'center', vertical: 'middle' };
+    const dsrHeader1 = headerRow1.getCell(days.length + 9);
+    dsrHeader1.value = "DESCONTO";
+    dsrHeader1.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Calibri' };
+    dsrHeader1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
+    dsrHeader1.alignment = { horizontal: 'center', vertical: 'middle' };
 
     // Row 2: Headers (Day of week)
     const headerRow2 = worksheet.getRow(2);
@@ -251,11 +344,11 @@ export default function RelatoriosPage() {
     faltasHeader2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
     faltasHeader2.alignment = { horizontal: 'center', vertical: 'middle' };
 
-    const obsHeader2 = headerRow2.getCell(days.length + 9);
-    obsHeader2.value = "Observações / Motivos";
-    obsHeader2.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 9, name: 'Calibri' };
-    obsHeader2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
-    obsHeader2.alignment = { horizontal: 'center', vertical: 'middle' };
+    const dsrHeader2 = headerRow2.getCell(days.length + 9);
+    dsrHeader2.value = "DSR";
+    dsrHeader2.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 9, name: 'Calibri' };
+    dsrHeader2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } };
+    dsrHeader2.alignment = { horizontal: 'center', vertical: 'middle' };
 
     // Rows Data
     let rowIdx = 1;
@@ -269,23 +362,18 @@ export default function RelatoriosPage() {
     }> = [];
 
     filteredData.forEach((emp) => {
-      const liquidoContratual = emp.salary || 0;
-      const mapping = salaryMappings.find(m => Math.abs(m.liquid - liquidoContratual) < 0.01);
-      const salarioBruto = mapping ? mapping.gross : liquidoContratual * 1.084;
-      
-      const empPayments = payments.filter(p => p.employee_id === emp.id && p.period_month === month + 1 && p.period_year === year);
-      const liquidoPagoMes = empPayments.filter(p => p.paid).reduce((acc, p) => acc + p.net_amount, 0);
+      const totalFaltasCalc = emp.absences + (emp.half_presences * 0.5);
+      const totalDsrCalc = emp.dsrInfo.totalDsr;
+      const { liquidoContratual, liquidoPagoMes, salarioBruto } = getEmployeeMonthFinancials(
+        emp,
+        totalDsrCalc,
+        totalFaltasCalc
+      );
 
       const empNum = emp.employee_number != null && String(emp.employee_number).trim() !== "" ? emp.employee_number : rowIdx++;
       
-      const totalFaltasCalc = emp.absences + (emp.half_presences * 0.5);
       const faltasStr = totalFaltasCalc > 0 ? `${totalFaltasCalc.toString().replace('.', ',')} faltas` : "-";
-
-      const obsSummaryStr = emp.monthObservations.length > 0
-        ? emp.monthObservations
-            .map(o => `${String(o.day).padStart(2, '0')}/${String(month + 1).padStart(2, '0')} (${o.statusShort}): ${o.observation}`)
-            .join(" | ")
-        : "-";
+      const dsrStr = totalDsrCalc > 0 ? `${totalDsrCalc} DSR` : "-";
 
       emp.monthObservations.forEach(o => {
         allMonthObsRows.push({
@@ -307,7 +395,7 @@ export default function RelatoriosPage() {
         liq_pago: liquidoPagoMes > 0 ? liquidoPagoMes : "-",
         bruto: salarioBruto > 0 ? salarioBruto : "-",
         faltas: faltasStr,
-        observacoes: obsSummaryStr
+        dsr: dsrStr
       });
       row.height = 18;
 
@@ -330,21 +418,31 @@ export default function RelatoriosPage() {
       row.getCell(7).numFmt = '"R$ "#,##0.00';
 
       days.forEach((date, index) => {
-        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const dayOfMonth = date.getDate();
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayOfMonth).padStart(2, '0')}`;
         const record = attendance[dateStr]?.[emp.id];
         const status = typeof record === 'string' ? record : record?.status;
         const obs = typeof record === 'object' && record?.observation ? record.observation.trim() : '';
         const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+        const dsrTriggersOnSaturday = emp.dsrInfo.saturdayToTriggerDays[dayOfMonth];
         
         const cell = row.getCell(index + 8);
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
 
         if (obs) {
           const meta = getStatusMeta(status);
-          cell.note = `${emp.name} - ${String(date.getDate()).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year} (${meta.label}):\nMotivo/Obs: ${obs}`;
+          cell.note = `${emp.name} - ${String(dayOfMonth).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year} (${meta.label}):\nMotivo/Obs: ${obs}`;
         }
-        
-        if (isWeekend) {
+
+        if (dsrTriggersOnSaturday && dsrTriggersOnSaturday.length > 0) {
+          // Sábado com desconto de DSR referente à falta na semana
+          cell.value = "DSR";
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4B084' } };
+          cell.font = { color: { argb: 'FFC00000' }, bold: true, name: 'Calibri', size: 9 };
+          cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+          const trigStr = dsrTriggersOnSaturday.map(d => `${String(d).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}`).join(', ');
+          cell.note = `Desconto DSR (1 diária do salário bruto) referente à falta do(s) dia(s) ${trigStr}.`;
+        } else if (isWeekend) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF595959' } };
           cell.border = {
             top: { style: 'thin', color: { argb: 'FF404040' } },
@@ -385,10 +483,9 @@ export default function RelatoriosPage() {
       styleCell(faltasCell);
       faltasCell.font = { bold: true, color: { argb: 'FFC00000' }, name: 'Calibri', size: 10 };
 
-      const obsCell = row.getCell(days.length + 9);
-      obsCell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-      obsCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-      obsCell.font = { name: 'Calibri', size: 9, color: { argb: 'FF334155' } };
+      const dsrCell = row.getCell(days.length + 9);
+      styleCell(dsrCell);
+      dsrCell.font = { bold: true, color: { argb: 'FF9F1239' }, name: 'Calibri', size: 10 };
     });
 
     // Segunda Aba: Detalhamento de Observações e Motivos de Faltas
@@ -431,7 +528,7 @@ export default function RelatoriosPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-primary">Relatórios e Fechamento</h1>
           <p className="text-muted-foreground mt-2">
-            Resumo de frequência mensal para a folha de pagamento. Passe o mouse sobre o status (F, FJ, M, P, S) no Espelho de Ponto para ver a observação/motivo.
+            Resumo de frequência mensal e espelho de ponto com controle de DSR e observações.
           </p>
         </div>
         <div className="flex gap-2">
@@ -534,23 +631,21 @@ export default function RelatoriosPage() {
               <TableHeader className="bg-slate-50 dark:bg-slate-900">
                 {viewMode === 'resumo' ? (
                   <TableRow>
-                    <TableHead>Funcionário</TableHead>
-                    <TableHead className="text-center">Presenças</TableHead>
-                    <TableHead className="text-center">Meias Pres.</TableHead>
-                    <TableHead className="text-center text-red-500">Faltas</TableHead>
-                    <TableHead className="text-center text-yellow-600">Justificadas</TableHead>
-                    <TableHead className="text-center">Suspensões</TableHead>
-                    <TableHead>Observações / Motivos no Mês</TableHead>
-                    <TableHead className="text-right font-bold text-primary">Dias Trabalhados</TableHead>
+                    <TableHead>FUNCIONÁRIO</TableHead>
+                    <TableHead className="text-center font-semibold">PRESENÇAS</TableHead>
+                    <TableHead className="text-center text-red-500 font-semibold">FALTAS</TableHead>
+                    <TableHead className="text-center text-yellow-600 font-semibold">FALTAS JUSTIFICADAS</TableHead>
+                    <TableHead className="text-center text-rose-600 font-semibold">DSR</TableHead>
+                    <TableHead className="text-right font-bold text-primary">DIAS TRABALHADOS</TableHead>
                   </TableRow>
                 ) : (
                   <TableRow>
                     <TableHead className="sticky left-0 z-20 bg-slate-50 dark:bg-slate-900 min-w-[200px] border-r">Funcionário</TableHead>
                     <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[120px] border-r text-center">Cargo</TableHead>
                     <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[80px] border-r text-center">VR</TableHead>
-                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[120px] border-r text-center">Líquido Contratual</TableHead>
-                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[120px] border-r text-center">Líquido Pago Mês</TableHead>
-                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[120px] border-r text-center">Salário Bruto</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[130px] border-r text-center">Líquido Contratual</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[130px] border-r text-center">Líquido Pago Mês</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[130px] border-r text-center">Salário Bruto</TableHead>
                     {days.map(date => (
                       <TableHead key={date.toISOString()} className="text-center w-12 border-r px-1 last:border-0">
                         <div className="flex flex-col items-center">
@@ -559,60 +654,52 @@ export default function RelatoriosPage() {
                         </div>
                       </TableHead>
                     ))}
-                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[80px] border-l text-center font-bold text-red-500">Faltas</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[90px] border-l text-center font-bold text-red-500">Faltas</TableHead>
+                    <TableHead className="bg-slate-50 dark:bg-slate-900 min-w-[80px] border-l text-center font-bold text-rose-600">DSR</TableHead>
                   </TableRow>
                 )}
               </TableHeader>
               <TableBody>
                 {filteredData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={viewMode === 'resumo' ? 8 : days.length + 7} className="text-center py-6 text-muted-foreground">
+                    <TableCell colSpan={viewMode === 'resumo' ? 6 : days.length + 8} className="text-center py-6 text-muted-foreground">
                       Nenhum dado encontrado para o período.
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredData.map((item) => {
-                    const diasTrabalhados = item.presences + (item.half_presences * 0.5) + item.justified;
+                    const totalPresencas = item.presences + (item.half_presences * 0.5);
+                    const totalFaltas = item.absences + (item.half_presences * 0.5);
+                    const totalDsr = item.dsrInfo.totalDsr;
+                    const diasTrabalhados = totalPresencas + item.justified;
                     
                     if (viewMode === 'resumo') {
                       return (
                         <TableRow key={item.id}>
                           <TableCell className="font-medium">{item.name}</TableCell>
-                          <TableCell className="text-center">{item.presences}</TableCell>
-                          <TableCell className="text-center">{item.half_presences}</TableCell>
-                          <TableCell className="text-center text-red-500 font-medium">{item.absences}</TableCell>
-                          <TableCell className="text-center text-yellow-600 font-medium">{item.justified}</TableCell>
-                          <TableCell className="text-center">{item.suspensions}</TableCell>
-                          <TableCell className="max-w-[320px]">
-                            {item.monthObservations.length === 0 ? (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            ) : (
-                              <div className="flex flex-wrap gap-1">
-                                {item.monthObservations.map((o) => (
-                                  <span
-                                    key={o.dateStr}
-                                    title={`${String(o.day).padStart(2, '0')}/${String(month + 1).padStart(2, '0')} (${o.statusLabel}): ${o.observation}`}
-                                    className="inline-flex items-center gap-1 text-[11px] bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-2 py-0.5 rounded-md"
-                                  >
-                                    <MessageSquare className="h-3 w-3 shrink-0 text-blue-600" />
-                                    <strong>Dia {String(o.day).padStart(2, '0')} ({o.statusShort}):</strong>
-                                    <span className="truncate max-w-[180px]">{o.observation}</span>
-                                  </span>
-                                ))}
-                              </div>
-                            )}
+                          <TableCell className="text-center font-medium">
+                            {totalPresencas.toString().replace('.', ',')}
+                          </TableCell>
+                          <TableCell className="text-center text-red-500 font-semibold">
+                            {totalFaltas.toString().replace('.', ',')}
+                          </TableCell>
+                          <TableCell className="text-center text-yellow-600 font-medium">
+                            {item.justified}
+                          </TableCell>
+                          <TableCell className="text-center text-rose-600 font-bold">
+                            {totalDsr}
                           </TableCell>
                           <TableCell className="text-right font-bold text-primary">
-                            {diasTrabalhados.toFixed(1).replace('.0', '')}
+                            {diasTrabalhados.toString().replace('.', ',')}
                           </TableCell>
                         </TableRow>
                       );
                     } else {
-                      const empPayments = payments.filter(p => p.employee_id === item.id && p.period_month === month + 1 && p.period_year === year);
-                      const liquidoContratual = item.salary || 0;
-                      const mapping = salaryMappings.find(m => Math.abs(m.liquid - liquidoContratual) < 0.01);
-                      const salarioBruto = mapping ? mapping.gross : liquidoContratual * 1.084;
-                      const pagoMes = empPayments.filter(p => p.paid).reduce((acc, p) => acc + p.net_amount, 0);
+                      const { liquidoContratual, liquidoPagoMes, salarioBruto, baseBruto } = getEmployeeMonthFinancials(
+                        item,
+                        totalDsr,
+                        totalFaltas
+                      );
 
                       return (
                         <TableRow key={item.id}>
@@ -629,31 +716,46 @@ export default function RelatoriosPage() {
                             {liquidoContratual > 0 ? `R$ ${liquidoContratual.toFixed(2)}` : "—"}
                           </TableCell>
                           <TableCell className="border-r text-center font-mono text-xs">
-                            {pagoMes > 0 ? (
-                              <span className={pagoMes >= liquidoContratual && liquidoContratual > 0 ? "text-emerald-600 font-bold" : "text-orange-600"}>
-                                R$ {pagoMes.toFixed(2)}
+                            {liquidoPagoMes > 0 ? (
+                              <span className={liquidoPagoMes >= liquidoContratual && liquidoContratual > 0 ? "text-emerald-600 font-bold" : "text-orange-600 font-semibold"}>
+                                R$ {liquidoPagoMes.toFixed(2)}
                               </span>
                             ) : "—"}
                           </TableCell>
-                          <TableCell className="border-r text-center font-mono text-xs">
+                          <TableCell className="border-r text-center font-mono text-xs font-medium">
                             {salarioBruto > 0 ? `R$ ${salarioBruto.toFixed(2)}` : "—"}
                           </TableCell>
                           {days.map(date => {
-                            const dayNum = String(date.getDate()).padStart(2, '0');
+                            const dayOfMonth = date.getDate();
+                            const dayNum = String(dayOfMonth).padStart(2, '0');
                             const monthNum = String(month + 1).padStart(2, '0');
                             const dateStr = `${year}-${monthNum}-${dayNum}`;
                             const dateBr = `${dayNum}/${monthNum}/${year} (${dayNames[date.getDay()]})`;
                             const record = attendance[dateStr]?.[item.id];
                             const status = typeof record === 'string' ? record : record?.status;
                             const observation = typeof record === 'object' && record?.observation ? record.observation.trim() : '';
+                            const hasDsrOnThisAbsence = typeof record === 'object' && Boolean(record?.discount_dsr);
+                            const dsrTriggersOnSaturday = item.dsrInfo.saturdayToTriggerDays[dayOfMonth];
+                            const isDsrSaturday = Boolean(dsrTriggersOnSaturday && dsrTriggersOnSaturday.length > 0);
                             const isWeekend = date.getDay() === 0 || date.getDay() === 6;
                             
                             let bg = isWeekend ? 'bg-muted/50' : '';
                             let text = '';
                             let textClass = '';
                             let statusLabel = '';
+                            let dsrNote: string | undefined = undefined;
 
-                            if (status === 'presence') {
+                            if (isDsrSaturday) {
+                              bg = 'bg-rose-100 dark:bg-rose-950/50';
+                              text = 'DSR';
+                              textClass = 'text-rose-700 dark:text-rose-300 ring-1 ring-rose-300 dark:ring-rose-800';
+                              statusLabel = 'Falta DSR (Desconto Semanal)';
+                              const trigDates = dsrTriggersOnSaturday
+                                .map(d => `${String(d).padStart(2, '0')}/${monthNum}`)
+                                .join(', ');
+                              const diariaBruta = baseBruto > 0 ? ` (1 diária = R$ ${(baseBruto / 30).toFixed(2)})` : '';
+                              dsrNote = `Desconto de DSR no sábado referente à falta do(s) dia(s) ${trigDates}${diariaBruta}.`;
+                            } else if (status === 'presence') {
                               bg = 'bg-emerald-100 dark:bg-emerald-900/30';
                               text = 'P';
                               textClass = 'text-emerald-700 dark:text-emerald-400';
@@ -680,11 +782,19 @@ export default function RelatoriosPage() {
                               statusLabel = 'Suspensão';
                             }
 
-                            const shouldShowHover = Boolean(observation) || (Boolean(text) && text !== 'P');
-                            const nativeTooltip = observation
-                              ? `${item.name} • ${dateBr}\nStatus: ${statusLabel} (${text})\nMotivo/Observação: ${observation}`
+                            if (!isDsrSaturday && hasDsrOnThisAbsence) {
+                              const satDay = item.dsrInfo.triggerDayToSaturday[dayOfMonth];
+                              const satDesc = satDay && satDay <= daysInMonth ? `sábado dia ${String(satDay).padStart(2, '0')}/${monthNum}` : 'sábado desta semana';
+                              dsrNote = `Falta com desconto de DSR aplicado no ${satDesc}.`;
+                            }
+
+                            const shouldShowHover = Boolean(observation) || Boolean(dsrNote) || (Boolean(text) && text !== 'P');
+                            const nativeTooltip = isDsrSaturday
+                              ? `${item.name} • ${dateBr}\n${dsrNote}`
+                              : observation
+                              ? `${item.name} • ${dateBr}\nStatus: ${statusLabel} (${text})\nMotivo/Observação: ${observation}${dsrNote ? `\n${dsrNote}` : ''}`
                               : text
-                              ? `${item.name} • ${dateBr}\nStatus: ${statusLabel} (${text})${text !== 'P' ? '\n(Sem observação registrada)' : ''}`
+                              ? `${item.name} • ${dateBr}\nStatus: ${statusLabel} (${text})${dsrNote ? `\n${dsrNote}` : text !== 'P' ? '\n(Sem observação registrada)' : ''}`
                               : undefined;
                             
                             return (
@@ -700,6 +810,7 @@ export default function RelatoriosPage() {
                                     statusLabel,
                                     statusShort: text,
                                     observation,
+                                    dsrNote,
                                     x: rect.left + rect.width / 2,
                                     y: rect.top,
                                   });
@@ -710,7 +821,7 @@ export default function RelatoriosPage() {
                                 }`}
                               >
                                 {text ? (
-                                  <div className={`w-7 h-7 flex items-center justify-center font-bold text-xs mx-auto rounded relative ${textClass}`}>
+                                  <div className={`w-8 h-7 flex items-center justify-center font-bold ${text === 'DSR' ? 'text-[10px]' : 'text-xs'} mx-auto rounded relative ${textClass}`}>
                                     {text}
                                     {observation && (
                                       <span
@@ -718,18 +829,24 @@ export default function RelatoriosPage() {
                                         aria-label="Possui observação"
                                       />
                                     )}
+                                    {hasDsrOnThisAbsence && !isDsrSaturday && (
+                                      <span
+                                        className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-600 ring-1 ring-white dark:ring-slate-900"
+                                        aria-label="Gera desconto DSR"
+                                      />
+                                    )}
                                   </div>
                                 ) : (
-                                  <div className="w-7 h-7 mx-auto" />
+                                  <div className="w-8 h-7 mx-auto" />
                                 )}
                               </TableCell>
                             );
                           })}
-                          <TableCell className="border-l text-center font-bold text-red-500 text-xs">
-                            {(() => {
-                              const totalF = item.absences + (item.half_presences * 0.5);
-                              return totalF > 0 ? `${totalF.toString().replace('.', ',')} faltas` : "—";
-                            })()}
+                          <TableCell className="border-l text-center font-bold text-red-500 text-xs whitespace-nowrap px-2">
+                            {totalFaltas > 0 ? `${totalFaltas.toString().replace('.', ',')} faltas` : "—"}
+                          </TableCell>
+                          <TableCell className="border-l text-center font-bold text-rose-600 text-xs whitespace-nowrap px-2">
+                            {totalDsr > 0 ? `${totalDsr} DSR` : "—"}
                           </TableCell>
                         </TableRow>
                       );
@@ -742,7 +859,7 @@ export default function RelatoriosPage() {
         </CardContent>
       </Card>
 
-      {/* Floating Instant Tooltip when hovering over F / FJ / M / S or any cell with observation */}
+      {/* Floating Instant Tooltip when hovering over F / DSR / FJ / M / S or any cell with observation */}
       {hoveredCell && (
         <div
           style={{
@@ -760,7 +877,7 @@ export default function RelatoriosPage() {
             <span className="text-slate-400">Status:</span>
             <span
               className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${
-                hoveredCell.statusShort === 'F'
+                hoveredCell.statusShort === 'F' || hoveredCell.statusShort === 'DSR'
                   ? 'bg-red-500/20 text-red-300 border border-red-500/40'
                   : hoveredCell.statusShort === 'FJ'
                   ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
@@ -775,18 +892,26 @@ export default function RelatoriosPage() {
             </span>
           </div>
 
-          <div className="pt-0.5">
-            <span className="text-slate-400 font-medium block mb-0.5">Motivo / Observação:</span>
-            {hoveredCell.observation ? (
-              <div className="bg-slate-800/90 border border-slate-700 rounded-lg p-2 text-amber-200 font-medium leading-relaxed break-words">
-                “{hoveredCell.observation}”
-              </div>
-            ) : (
-              <div className="text-slate-400 italic text-[11px]">
-                Nenhum motivo/observação foi informado no apontamento deste dia.
-              </div>
-            )}
-          </div>
+          {hoveredCell.dsrNote && (
+            <div className="bg-rose-950/90 border border-rose-700/70 rounded-lg p-2 text-rose-200 font-semibold leading-snug">
+              ⚠️ {hoveredCell.dsrNote}
+            </div>
+          )}
+
+          {hoveredCell.statusShort !== 'DSR' && (
+            <div className="pt-0.5">
+              <span className="text-slate-400 font-medium block mb-0.5">Motivo / Observação:</span>
+              {hoveredCell.observation ? (
+                <div className="bg-slate-800/90 border border-slate-700 rounded-lg p-2 text-amber-200 font-medium leading-relaxed break-words">
+                  “{hoveredCell.observation}”
+                </div>
+              ) : (
+                <div className="text-slate-400 italic text-[11px]">
+                  Nenhum motivo/observação foi informado no apontamento deste dia.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

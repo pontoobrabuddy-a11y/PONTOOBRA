@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare, User } from "lucide-react";
+import { MessageSquare, User, AlertTriangle, Check } from "lucide-react";
 
 const statusConfig = {
   presence: { label: "Presença", short: "P", color: "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600", dot: "bg-emerald-500" },
@@ -83,11 +83,34 @@ export default function ApontamentoPage() {
   }, [date, attendance, draftAttendance, employees]);
 
   const handleStatusChange = (id: string, newStatus: Status) => {
-    setDraftAttendance(date, { [id]: { ...(currentAttendance[id] || {}), status: newStatus } });
+    const prev = currentAttendance[id] || { status: null };
+    const canKeepDsr = newStatus === "absence" || newStatus === "half_presence" || newStatus === "suspension";
+    setDraftAttendance(date, {
+      [id]: {
+        ...prev,
+        status: newStatus,
+        discount_dsr: canKeepDsr ? prev.discount_dsr : false,
+      },
+    });
+  };
+
+  const handleToggleDsr = (id: string) => {
+    const prev = currentAttendance[id] || { status: null };
+    const nextDsr = !prev.discount_dsr;
+    const validDsrStatus =
+      prev.status === "absence" || prev.status === "half_presence" || prev.status === "suspension";
+    setDraftAttendance(date, {
+      [id]: {
+        ...prev,
+        status: nextDsr && !validDsrStatus ? "absence" : prev.status,
+        discount_dsr: nextDsr,
+      },
+    });
   };
 
   const markAllAs = (status: Status) => {
     const newDrafts: Record<string, AttendanceRecord> = {};
+    const canKeepDsr = status === "absence" || status === "half_presence" || status === "suspension";
     employees.filter(emp => {
       if (emp.status === "inativo") return false;
       if (emp.admission_date) {
@@ -96,7 +119,12 @@ export default function ApontamentoPage() {
       }
       return true;
     }).forEach(emp => {
-      newDrafts[emp.id] = { ...(currentAttendance[emp.id] || {}), status };
+      const prev = currentAttendance[emp.id] || { status: null };
+      newDrafts[emp.id] = {
+        ...prev,
+        status,
+        discount_dsr: canKeepDsr ? prev.discount_dsr : false,
+      };
     });
     setDraftAttendance(date, newDrafts);
   };
@@ -214,15 +242,19 @@ export default function ApontamentoPage() {
         <CardContent>
           <div className="space-y-2">
             {filteredEmployees.map((employee) => {
-              const record = currentAttendance[employee.id] || {};
+              const record = currentAttendance[employee.id] || { status: null };
               const hasObs = !!record.observation;
+              const hasDsr = !!record.discount_dsr;
               
               return (
                 <div 
                   key={employee.id} 
-                  className="flex flex-col p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors gap-3"
+                  className={cn(
+                    "flex flex-col p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors gap-3",
+                    hasDsr ? "border-rose-300 bg-rose-50/30 dark:border-rose-900 dark:bg-rose-950/20" : ""
+                  )}
                 >
-                  <div className="flex justify-between items-start">
+                  <div className="flex justify-between items-start gap-2">
                     <div className="flex items-center gap-3">
                       <div 
                         onClick={(e) => {
@@ -249,18 +281,50 @@ export default function ApontamentoPage() {
                             {record.observation}
                           </span>
                         )}
+                        {hasDsr && (
+                          <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold mt-1 flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            Desconto DSR ativo (contará 1 falta no sábado desta semana)
+                          </span>
+                        )}
                       </div>
                     </div>
-                    {/* Botão de Observação no topo direito */}
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      onClick={() => openObsDialog(employee.id)}
-                      className={`shrink-0 h-8 w-8 ${hasObs ? 'bg-blue-50 border-blue-200 text-blue-600' : 'text-slate-400'}`}
-                      title="Adicionar Observação"
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                    </Button>
+                    {/* Botões de Desconto DSR e Observação no topo direito */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button
+                        type="button"
+                        variant={hasDsr ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handleToggleDsr(employee.id)}
+                        className={cn(
+                          "h-8 px-2.5 text-xs font-semibold gap-1.5 transition-all",
+                          hasDsr
+                            ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-700 shadow-xs"
+                            : "text-slate-600 dark:text-slate-400 border-slate-200 hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                        )}
+                        title="Marcar para descontar o DSR (Descanso Semanal Remunerado) no sábado desta semana"
+                      >
+                        <div
+                          className={cn(
+                            "w-3.5 h-3.5 rounded-xs border flex items-center justify-center",
+                            hasDsr ? "bg-white text-rose-600 border-white" : "border-slate-400"
+                          )}
+                        >
+                          {hasDsr && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        </div>
+                        <span>Descontar DSR</span>
+                      </Button>
+
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={() => openObsDialog(employee.id)}
+                        className={`shrink-0 h-8 w-8 ${hasObs ? 'bg-blue-50 border-blue-200 text-blue-600' : 'text-slate-400'}`}
+                        title="Adicionar Observação"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                   
                   {/* Grid de botões mobile-first */}

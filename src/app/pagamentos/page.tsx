@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useStore } from "@/store/useStore";
+import { useStore, calculateMonthDsr } from "@/store/useStore";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,7 @@ interface Employee {
   employment_type?: "CLT" | "PJ" | "MEI" | "Avulso";
   pix_key?: string;
   pix_type?: string;
+  salary_family?: boolean;
 }
 
 interface Payment {
@@ -294,6 +295,13 @@ export default function PagamentosPage() {
     return absences;
   };
 
+  const getDsrInPeriod = (employeeId: string, startDay: number, endDay: number) => {
+    const dsrInfo = calculateMonthDsr(attendance, employeeId, anoSelecionado, mesSelecionado);
+    if (startDay === 1 && endDay <= 15) return dsrInfo.dsrQ1;
+    if (startDay >= 16) return dsrInfo.dsrQ2;
+    return dsrInfo.totalDsr;
+  };
+
   const calculateValorQ1 = (emp: Employee) => {
     const isAvulso = emp.employment_type === "Avulso";
     const diasQ1 = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 1, 15);
@@ -302,9 +310,11 @@ export default function PagamentosPage() {
     }
     const activeDaysQ1 = getActiveDaysInPeriod(emp, 1, 15);
     const absencesQ1 = getAbsencesInPeriod(emp.id, 1, 15);
+    const dsrQ1 = getDsrInPeriod(emp.id, 1, 15);
+    const baseSalary = (emp.salary || 0) + (emp.salary_family ? 67.54 : 0);
     const grossSalary = getGrossSalary(emp.salary || 0);
-    const baseQ1 = ((emp.salary || 0) / 30) * activeDaysQ1;
-    const discountQ1 = absencesQ1 * (grossSalary / 30);
+    const baseQ1 = (baseSalary / 30) * activeDaysQ1;
+    const discountQ1 = (absencesQ1 + dsrQ1) * (grossSalary / 30);
     return Math.max(0, baseQ1 - discountQ1);
   };
 
@@ -330,9 +340,11 @@ export default function PagamentosPage() {
     }
     const activeDaysQ2 = getActiveDaysInPeriod(emp, 16, 30);
     const absencesQ2 = getAbsencesInPeriod(emp.id, 16, 31);
+    const dsrQ2 = getDsrInPeriod(emp.id, 16, 31);
+    const baseSalary = (emp.salary || 0) + (emp.salary_family ? 67.54 : 0);
     const grossSalary = getGrossSalary(emp.salary || 0);
-    const baseQ2 = ((emp.salary || 0) / 30) * activeDaysQ2;
-    const discountQ2 = absencesQ2 * (grossSalary / 30);
+    const baseQ2 = (baseSalary / 30) * activeDaysQ2;
+    const discountQ2 = (absencesQ2 + dsrQ2) * (grossSalary / 30);
     const precalcQ2 = Math.max(0, baseQ2 - discountQ2);
 
     const liquidoStr = liquidoContab[emp.id] || "";
@@ -738,7 +750,8 @@ export default function PagamentosPage() {
       if (pag?.status === "pago" && pag.valor_base !== undefined) return acc + pag.valor_base;
       const isAvulso = e.employment_type === "Avulso";
       const diasMes = getDaysWorked(e.id, mesSelecionado, anoSelecionado, 1, 31);
-      const gross = isAvulso ? (e.salary || 0) * diasMes : (e.salary || 0);
+      const baseSalary = (e.salary || 0) + (e.salary_family ? 67.54 : 0);
+      const gross = isAvulso ? (e.salary || 0) * diasMes : baseSalary;
       const desconto = parseFloat(descontoBuddy[e.id] || "0") || 0;
       return acc + Math.max(0, gross - desconto);
     }, 0);
@@ -922,6 +935,7 @@ export default function PagamentosPage() {
                         const valorQ1 = calculateValorQ1(emp);
                         const activeDaysQ1 = getActiveDaysInPeriod(emp, 1, 15);
                         const absencesQ1 = getAbsencesInPeriod(emp.id, 1, 15);
+                        const dsrQ1 = getDsrInPeriod(emp.id, 1, 15);
                         
                         const pag = getPagamento(emp.id, "casana_q1");
                         const pago = pag?.status === "pago";
@@ -952,6 +966,7 @@ export default function PagamentosPage() {
                                 <div className="text-[10px] text-muted-foreground font-normal leading-tight">
                                   {activeDaysQ1 < 15 && <div>Ativo: {activeDaysQ1}d</div>}
                                   {absencesQ1 > 0 && <div className="text-red-500 font-medium">Faltas: {absencesQ1}d</div>}
+                                  {dsrQ1 > 0 && <div className="text-rose-600 font-semibold">DSR: {dsrQ1}d</div>}
                                 </div>
                               )}
                             </td>
@@ -1090,6 +1105,7 @@ export default function PagamentosPage() {
                         const valorQ2 = calculateValorQ2(emp);
                         const activeDaysQ2 = getActiveDaysInPeriod(emp, 16, 30);
                         const absencesQ2 = getAbsencesInPeriod(emp.id, 16, 31);
+                        const dsrQ2 = getDsrInPeriod(emp.id, 16, 31);
 
                         const pag = getPagamento(emp.id, "casana_q2");
                         const pago = pag?.status === "pago";
@@ -1128,6 +1144,7 @@ export default function PagamentosPage() {
                                   <div className="text-[10px] text-muted-foreground font-normal leading-tight">
                                     {activeDaysQ2 < 15 && <div>Ativo: {activeDaysQ2}d</div>}
                                     {absencesQ2 > 0 && <div className="text-red-500 font-medium">Faltas: {absencesQ2}d</div>}
+                                    {dsrQ2 > 0 && <div className="text-rose-600 font-semibold">DSR: {dsrQ2}d</div>}
                                   </div>
                                 </div>
                               )}
@@ -1293,7 +1310,8 @@ export default function PagamentosPage() {
                    {buddyEmployees.map((emp, idx) => {
                      const isAvulso = emp.employment_type === "Avulso";
                      const diasMes = getDaysWorked(emp.id, mesSelecionado, anoSelecionado, 1, 31);
-                     const gross = isAvulso ? (emp.salary || 0) * diasMes : (emp.salary || 0);
+                     const baseSalary = (emp.salary || 0) + (emp.salary_family ? 67.54 : 0);
+                     const gross = isAvulso ? (emp.salary || 0) * diasMes : baseSalary;
                      const desconto = parseFloat(descontoBuddy[emp.id] || "0") || 0;
                      const valorFinal = Math.max(0, gross - desconto);
                      const pag = getPagamento(emp.id, "buddy_mensal");

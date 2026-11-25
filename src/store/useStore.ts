@@ -37,6 +37,103 @@ export type Status = "presence" | "absence" | "justified_absence" | "half_presen
 export interface AttendanceRecord {
   status: Status;
   observation?: string;
+  discount_dsr?: boolean;
+}
+
+const DSR_TAG = "[DSR]";
+
+export function parseAttendanceObservation(rawObs?: string | null, rawDsr?: boolean): {
+  observation?: string;
+  discount_dsr: boolean;
+} {
+  const str = (rawObs || "").trim();
+  const hasTag = str.startsWith(DSR_TAG) || str.includes(DSR_TAG);
+  const cleanObs = str.replace(/\[DSR\]\s*/g, "").trim();
+  return {
+    observation: cleanObs || undefined,
+    discount_dsr: Boolean(rawDsr) || hasTag,
+  };
+}
+
+export function serializeAttendanceObservation(observation?: string, discount_dsr?: boolean): string | null {
+  const cleanObs = (observation || "").replace(/\[DSR\]\s*/g, "").trim();
+  if (discount_dsr) {
+    return cleanObs ? `${DSR_TAG} ${cleanObs}` : DSR_TAG;
+  }
+  return cleanObs || null;
+}
+
+export interface MonthDsrResult {
+  totalDsr: number;
+  dsrQ1: number;
+  dsrQ2: number;
+  saturdayToTriggerDays: Record<number, number[]>;
+  triggerDayToSaturday: Record<number, number>;
+}
+
+export function calculateMonthDsr(
+  attendance: Record<string, Record<string, AttendanceRecord | Status>>,
+  employeeId: string,
+  year: number,
+  month1Indexed: number
+): MonthDsrResult {
+  const month0 = month1Indexed - 1;
+  const daysInMonth = new Date(year, month1Indexed, 0).getDate();
+  const weekTriggers: Record<number, number[]> = {};
+  const triggerDayToSaturday: Record<number, number> = {};
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month1Indexed).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const record = attendance[dateStr]?.[employeeId];
+    if (!record || typeof record === "string") continue;
+
+    const hasDsrFlag =
+      Boolean(record.discount_dsr) ||
+      Boolean(record.observation && record.observation.includes(DSR_TAG));
+
+    if (
+      hasDsrFlag &&
+      (record.status === "absence" ||
+        record.status === "half_presence" ||
+        record.status === "suspension")
+    ) {
+      const dObj = new Date(year, month0, day);
+      const dow = dObj.getDay(); // 0 (Sun) .. 6 (Sat)
+      const saturdayDay = day + (6 - dow);
+      if (!weekTriggers[saturdayDay]) {
+        weekTriggers[saturdayDay] = [];
+      }
+      weekTriggers[saturdayDay].push(day);
+      triggerDayToSaturday[day] = saturdayDay;
+    }
+  }
+
+  let totalDsr = 0;
+  let dsrQ1 = 0;
+  let dsrQ2 = 0;
+  const saturdayToTriggerDays: Record<number, number[]> = {};
+
+  Object.entries(weekTriggers).forEach(([satStr, triggers]) => {
+    const satDay = Number(satStr);
+    totalDsr += 1;
+    const firstTrigger = triggers[0];
+    if (firstTrigger <= 15) {
+      dsrQ1 += 1;
+    } else {
+      dsrQ2 += 1;
+    }
+    if (satDay >= 1 && satDay <= daysInMonth) {
+      saturdayToTriggerDays[satDay] = triggers;
+    }
+  });
+
+  return {
+    totalDsr,
+    dsrQ1,
+    dsrQ2,
+    saturdayToTriggerDays,
+    triggerDayToSaturday,
+  };
 }
 
 export interface Payment {
@@ -154,9 +251,11 @@ export const useStore = create<AppState>()((set, get) => ({
         if (!attendanceRecord[item.date]) {
           attendanceRecord[item.date] = {};
         }
+        const parsed = parseAttendanceObservation(item.observation, item.discount_dsr);
         attendanceRecord[item.date][item.employee_id] = {
           status: item.status as Status,
-          observation: item.observation || undefined
+          observation: parsed.observation,
+          discount_dsr: parsed.discount_dsr
         };
       });
     }
@@ -202,12 +301,24 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   saveAttendance: async (date, data) => {
-    const upserts = Object.keys(data).map(employeeId => ({
-      date,
-      employee_id: employeeId,
-      status: data[employeeId].status,
-      observation: data[employeeId].observation || null
-    }));
+    const normalizedData: Record<string, AttendanceRecord> = {};
+    const upserts = Object.keys(data).map(employeeId => {
+      const rec = data[employeeId];
+      const canHaveDsr = rec.status === 'absence' || rec.status === 'half_presence' || rec.status === 'suspension';
+      const discountDsr = canHaveDsr ? Boolean(rec.discount_dsr) : false;
+      const parsed = parseAttendanceObservation(rec.observation, discountDsr);
+      normalizedData[employeeId] = {
+        status: rec.status,
+        observation: parsed.observation,
+        discount_dsr: discountDsr
+      };
+      return {
+        date,
+        employee_id: employeeId,
+        status: rec.status,
+        observation: serializeAttendanceObservation(parsed.observation, discountDsr)
+      };
+    });
 
     if (upserts.length === 0) return true;
 
@@ -221,7 +332,7 @@ export const useStore = create<AppState>()((set, get) => ({
     }
 
     set((state) => ({
-      attendance: { ...state.attendance, [date]: { ...state.attendance[date], ...data } },
+      attendance: { ...state.attendance, [date]: { ...state.attendance[date], ...normalizedData } },
       draftAttendance: { ...state.draftAttendance, [date]: {} }
     }));
     return true;
